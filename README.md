@@ -10,17 +10,26 @@ own identity. Three MCP servers, a Gemini-based agent and the supporting infrast
 
 ## How a request flows
 
-1. The agent asks **Keycloak** (OAuth 2.0 client-credentials grant) for an access token. The token is a signed JWT that
-   names the caller's role (`mcp-viewer` or `mcp-operator`) and the audience it is meant for (this gateway).
-2. The agent sends an MCP request to the **gateway** with `Authorization: Bearer <token>`. A request without a valid token
-   gets `401` and a pointer to the gateway's discovery documents, which is how a spec-compliant client finds the
-   authorization server on its own.
-3. The gateway verifies the token (signature, issuer, audience, expiry), requires a role, and evaluates a per-tool rule:
-   a viewer is shown, and may call, only an explicit allow-list of read tools; an operator may use every tool.
-4. For an allowed call the gateway picks the server that owns the tool and calls it **as itself**: it presents a
-   Google-signed ID token whose audience is that one server. The caller's token is never forwarded.
-5. The server verifies that credential, runs the tool, and reaches its backing service (Kubernetes API, BigQuery or
-   Firestore) with its own least-privilege cloud identity. No service-account keys exist anywhere in the system.
+The numbers match the architecture diagram above.
+
+1. **The client calls the gateway without a token.**
+2. **The gateway answers `401`.** HTTP 401 *Unauthorized* means "I cannot tell who you are": there was no token, or it was
+   invalid or expired. The reply also points to the gateway's discovery documents, which say where to log in. This is how an
+   MCP client that has never seen the server finds the identity provider on its own.
+3. **The client logs in at Keycloak** (OAuth 2.0 client-credentials grant, with its client id and secret) and receives an
+   access token: a signed JWT, valid for 5 minutes, that names the caller's role (`mcp-viewer` or `mcp-operator`) and the
+   audience it is meant for (this gateway).
+4. **The client repeats the request, now carrying the token** (`Authorization: Bearer <token>`).
+5. **The gateway verifies and authorizes.** It checks the token's signature, issuer, audience and expiry (failure: `401`),
+   requires a role (no role: `403`, HTTP *Forbidden*, meaning "I know who you are, but you are not allowed"), and applies the
+   per-tool rule: a viewer is shown, and may call, only an explicit allow-list of read tools; an operator may use every tool.
+   A tool a role may not use is hidden from its tool list and a direct call answers "Unknown tool".
+6. **The gateway calls the right server as itself.** It presents a Google-signed ID token whose audience is that one server;
+   the caller's token is never forwarded. The server verifies that credential and runs the tool.
+7. **The server reaches its data service** (Kubernetes API, BigQuery or Firestore) with its own least-privilege cloud
+   identity. No service-account keys exist anywhere in the system.
+8. **The AI agent** is a Kubernetes Job that performs steps 1 to 7 inside the cluster, as a viewer or an operator, and lets
+   Gemini (Vertex AI) choose which tools to call.
 
 The mechanics behind each step are described in [docs/architecture.md](docs/architecture.md). The concepts (MCP, OAuth,
 JWT, one gateway versus many, best practices) are explained from first principles in

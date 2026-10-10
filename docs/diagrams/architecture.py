@@ -11,7 +11,7 @@ from archlib import Diagram  # noqa: E402
 
 OUT = os.path.join(os.path.dirname(__file__), "..", "img", "architecture.svg")
 
-W, H = 1400, 1400
+W, H = 1400, 1570
 d = Diagram(W, H, "MCP gateway on GKE: architecture",
             "agentgateway 1.6 · Keycloak · 3 MCP servers · Gemini agent · Workload Identity (keyless) · NetworkPolicy · MCP 2026-07-28")
 
@@ -34,15 +34,22 @@ d.node("kapi", 1100, 420, "Kubernetes API", "cloud", "compute", "Role: get/list 
 d.node("bq", 1100, 570, "BigQuery", "db", "data", "dataset mcp_finops\n(dataViewer, read-only)")
 d.node("fs", 1100, 710, "Firestore", "db", "data", "database mcp-tickets-*\n(datastore.user, IAM-conditioned)")
 
-d.edge("cli", "prx", "h", label="steps 1, 2, 4: MCP requests and discovery", lab_dy=-10)
-d.path([(90, 488), (90, 250), (558, 250)], num=3, label="client credentials", lab_at=(300, 242))
-d.path([(622, 520), (680, 520), (680, 420), (788, 420)], num=7, color="#d93025")
+# steps 1, 2 and 4 are three separate arrows between the client and the gateway
+d.path([(122, 494), (558, 494)])
+d.path([(558, 520), (122, 520)])
+d.path([(122, 546), (558, 546)])
+for y, n, txt in ((494, "1", "request, no token"), (520, "2", "reply 401 + where to log in"), (546, "4", "same request + token")):
+    d.badge(500, y, n)
+    d.text(140, y - 5, txt, 11.5, "#202124", "600")
+d.path([(90, 488), (90, 250), (558, 250)], num=3, label="3  log in (client id + secret), get a token", lab_at=(300, 242))
+d.badge(520, 468, "5")
+d.text(536, 472, "verify + authorize", 11.5, "#d93025", "600")
+d.path([(622, 520), (680, 520), (680, 420), (788, 420)], num=6, color="#d93025")
 d.path([(680, 520), (680, 570), (788, 570)], color="#d93025")
 d.path([(680, 570), (680, 710), (788, 710)], color="#d93025")
-d.badge(652, 470, "5")
-d.edge("k8s", "kapi", "h", num=8, color="#00897b", dash=True)
+d.edge("k8s", "kapi", "h", num=7, color="#00897b", dash=True)
 d.node("vtx", 1100, 850, "Vertex AI", "sparkle", "ai", "gemini-2.5-flash\n(aiplatform.user only)")
-d.path([(660, 728), (660, 548), (624, 548)], num=9)
+d.path([(660, 728), (660, 565), (624, 565)], num=8)
 d.path([(692, 760), (720, 760), (720, 850), (1068, 850)], color="#f29900", dash=True)
 d.edge("fin", "bq", "h", color="#00897b", dash=True)
 d.edge("tix", "fs", "h", color="#00897b", dash=True)
@@ -53,15 +60,20 @@ d.edge("cb", "ar", "h", label="push", color="#5f6368")
 d.text(700, 1004, "nodes pull as the default compute SA,", 11.5)
 d.text(700, 1020, "read access on this one repo only.", 11.5)
 
-d.legend(34, 1130, "Request flow (each step is asserted by scripts/test.sh)", [
-    ("1-4", "No token -> 401 + resource_metadata; client reads the discovery documents; authenticates at Keycloak (3); retries with the JWT"),
-    ("5", "Gateway: signature, issuer, audience, expiry; needs a role (403 without); per-tool rule hides tools the role may not use"),
-    ("7", "Gateway -> server with its OWN Google ID token (audience = that one server), never the caller's token; the server verifies it"),
-    ("8", "Each server reaches its Google service as its own Workload Identity service account: no keys exist anywhere"),
-    ("9", "AI agent: a Job labelled mcp-client. Gets a token (agent-viewer or agent-operator), asks the gateway what it may use, lets Gemini choose tools. It cannot reach the servers; its only Google role is Vertex AI."),
+d.text(34, 1140, "HTTP status codes used:  401 Unauthorized = the gateway cannot tell who is calling (no token, or an invalid or expired one).", 12.5, "#202124", "600")
+d.text(34, 1159, "403 Forbidden = it knows who is calling, but that role is not allowed.  A tool the role may not use is hidden and answers \"Unknown tool\".", 12.5, "#202124", "600")
+d.legend(34, 1185, "Request flow (every step is asserted by scripts/test.sh)", [
+    ("1", "The client calls the gateway without a token."),
+    ("2", "The gateway answers 401 and points to its discovery documents, which say where to log in (the identity provider)."),
+    ("3", "The client logs in at Keycloak with its client id and secret and receives a token (a signed JWT) valid for 5 minutes."),
+    ("4", "The client repeats the request, now carrying the token."),
+    ("5", "The gateway checks the token (signature, issuer, audience, expiry), requires a role, then applies the per-tool rule."),
+    ("6", "For an allowed call, the gateway calls the right server with its OWN Google-signed token for that server, never the caller's."),
+    ("7", "Each server reaches its data service (Kubernetes API, BigQuery, Firestore) as its own cloud identity; no keys exist anywhere."),
+    ("8", "The AI agent is a Job that does steps 1-7 inside the cluster, as a viewer or an operator; Gemini (Vertex AI) picks the tools."),
 ], w=1340)
-d.text(34, 1325, "Out of scope: gateway rate limits and tracing · TLS public entry point · Keycloak on a persistent database · human login (auth code + PKCE) · image scanning/signing and CI.", 12, "#b3261e", "600")
-d.key(34, 1345)
+d.text(34, 1465, "Out of scope: gateway rate limits and tracing · TLS public entry point · Keycloak on a persistent database · human login (auth code + PKCE) · image scanning/signing and CI.", 12, "#b3261e", "600")
+d.key(34, 1487)
 
 if __name__ == "__main__":
     d.save(OUT)
