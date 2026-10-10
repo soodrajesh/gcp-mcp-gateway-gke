@@ -1,119 +1,172 @@
 # MCP gateway on GKE
 
-An AI agent should not call every MCP server directly. This repo puts **one gateway** in front of them: the agent
-authenticates against an **identity provider (Keycloak)**, gets a **JWT**, and sends it to the gateway; the gateway
-verifies it, decides which *tools* that caller may see or call, and forwards to the right MCP server **as itself**
-(never with the caller's token). Three real servers sit behind it, and a Gemini-based AI agent uses them. Runs on GKE Autopilot with
-[agentgateway](https://agentgateway.dev) 1.6 (Gateway API, MCP spec 2026-07-28).
-
-> **Status: milestone 4 of 4 (core complete).** Identity, gateway policy, three real MCP servers with keyless cloud
-> identities, service-to-service authentication, network lockdown, an AI agent and restart resilience are built and tested
-> end to end (**70 live checks**). Rate limits, tracing, a TLS entry point and CI are listed under [Roadmap](#roadmap).
-> **Environment state:** torn down after the final verification (nothing is running or billing); `./scripts/up.sh` rebuilds it.
->
-> **Verified from zero on 2026-10-10:** everything was destroyed with `./scripts/down.sh`, rebuilt with `./scripts/up.sh`
-> (cluster, registry, identities, two image builds, data, Keycloak, servers, policies; about 15 minutes) and `./scripts/test.sh`
-> passed 70/70 on the fresh build. Every output below is captured from real runs.
+A reference implementation of an **MCP gateway**: one controlled entry point between AI agents and the MCP servers they use.
+Agents authenticate against an identity provider, receive a short-lived token, and call a single gateway URL. The gateway
+verifies the token, decides which tools that caller may see or call, and forwards each call to the right server using its
+own identity. Three MCP servers, a Gemini-based agent and the supporting infrastructure run on Google Kubernetes Engine
+(Autopilot) with [agentgateway](https://agentgateway.dev) 1.6 and the MCP specification revision 2026-07-28.
 
 ![Architecture](docs/img/architecture.png)
 
-**New to MCP gateways? Start with [docs/how-mcp-works.md](docs/how-mcp-works.md)**
-(components, request flow, OAuth/JWT, one vs many gateways, best practices).
+## How a request flows
 
-## The three servers
+1. The agent asks **Keycloak** (OAuth 2.0 client-credentials grant) for an access token. The token is a signed JWT that
+   names the caller's role (`mcp-viewer` or `mcp-operator`) and the audience it is meant for (this gateway).
+2. The agent sends an MCP request to the **gateway** with `Authorization: Bearer <token>`. A request without a valid token
+   gets `401` and a pointer to the gateway's discovery documents, which is how a spec-compliant client finds the
+   authorization server on its own.
+3. The gateway verifies the token (signature, issuer, audience, expiry), requires a role, and evaluates a per-tool rule:
+   a viewer is shown, and may call, only an explicit allow-list of read tools; an operator may use every tool.
+4. For an allowed call the gateway picks the server that owns the tool and calls it **as itself**: it presents a
+   Google-signed ID token whose audience is that one server. The caller's token is never forwarded.
+5. The server verifies that credential, runs the tool, and reaches its backing service (Kubernetes API, BigQuery or
+   Firestore) with its own least-privilege cloud identity. No service-account keys exist anywhere in the system.
 
-| Server | Tools | Backed by | Identity | Who may call (at the gateway) |
-|---|---|---|---|---|
-| `k8s` | `list_pods`, `get_pod_events`, `get_pod_logs` | Kubernetes API | a `Role` with get/list on pods, pod logs, events in **one namespace** | viewer, operator |
-| `finops` | `cost_by_service`, `top_cost_skus` | BigQuery (synthetic billing table) | Google SA with `dataViewer` on **one dataset** + `jobUser`; two fixed parameterised queries, no free SQL | viewer, operator |
-| `tickets` | `list_tickets`, `get_ticket`, **`create_ticket`, `update_ticket_status`** | Firestore | Google SA with `datastore.user` **conditioned on one database** | read: viewer, operator; **write: operator only** |
+The mechanics behind each step are described in [docs/architecture.md](docs/architecture.md). The concepts (MCP, OAuth,
+JWT, one gateway versus many, best practices) are explained from first principles in
+[docs/how-mcp-works.md](docs/how-mcp-works.md).
 
-## What works today (`./scripts/test.sh`: 70 checks in four suites)
+## Components
 
-| Suite | Claim | Checks |
+| Component | What it is | Where it runs |
 |---|---|---|
-| **Flow** | Discovery (401 + `resource_metadata`, metadata documents) · Keycloak tokens · gateway authentication (garbage / untrusted-key / tampered / wrong-audience → 401, no role → 403) · per-tool authorization with a default-deny viewer allow-list (7 of 9 tools) · real data from all three servers · bad input and a disallowed namespace refused | 30 |
-| **Isolation** | Each server refuses anyone but the gateway (tested directly, including a *genuine Google-signed token for another audience*) · only the gateway reaches the servers (NetworkPolicy, each block paired with a positive control) · servers can open HTTPS but not HTTP or SMTP | 19 |
-| **Agent** | A Gemini agent runs as a Kubernetes Job and answers a question needing two servers · a **prompt-injection payload** in a ticket cannot make a viewer agent write: it was never offered a write tool · the same agent code as an operator really creates a ticket in Firestore | 12 |
-| **Resilience** | Kill Keycloak: the realm comes back, **the same signing key id** signs, the gateway needs no change, and tokens issued before the restart still work · replace the gateway pod: same policy afterwards | 9 |
+| **agentgateway** | MCP-aware gateway built on the Kubernetes Gateway API. A controller programs a proxy; the proxy terminates MCP, authenticates, authorizes, federates tools and routes calls | `agentgateway-system` (controller), `mcp-platform` (proxy) |
+| **Keycloak** | Identity provider. Issues JWTs; the realm (roles, clients, claim mappers, signing key) is defined as code | `mcp-platform` |
+| **MCP servers** (`k8s`, `finops`, `tickets`) | Small stateless Python services, one image, selected by the `SERVER` variable | `mcp-platform` |
+| **AI agent** | A Python program that gets a token, asks the gateway for its tools, and lets Gemini choose which to call. Runs as a Kubernetes Job | `mcp-platform` |
+| **Google Cloud** | GKE Autopilot, BigQuery, Firestore, Vertex AI (Gemini), Artifact Registry, Cloud Build, IAM / Workload Identity | one project, `europe-west1` |
+
+### The MCP servers
+
+| Server | Tools | Backed by | Cloud identity and scope | Callable by |
+|---|---|---|---|---|
+| `k8s` | `list_pods`, `get_pod_events`, `get_pod_logs` | Kubernetes API | a `Role` that allows only `get`/`list` on pods, pod logs and events in one namespace | viewer, operator |
+| `finops` | `cost_by_service`, `top_cost_skus` | BigQuery (synthetic billing table) | `bigquery.dataViewer` on one dataset plus `jobUser`; two fixed, parameterised queries, no free-form SQL | viewer, operator |
+| `tickets` | `list_tickets`, `get_ticket`, `create_ticket`, `update_ticket_status` | Firestore | `datastore.user` restricted by an IAM condition to one database | read tools: viewer, operator; write tools: operator only |
+
+Through the gateway a tool is named `<server>_<tool>`, for example `tickets_create_ticket`.
+
+## Security layers
+
+Each layer is enforced independently and tested independently, so a failure of one does not open the system.
+
+| Layer | Mechanism | Rejects with |
+|---|---|---|
+| Caller identity | JWT validation at the gateway: signature, issuer, audience, expiry | `401` |
+| Caller authorization | Role required; per-tool allow-list (default deny); denied tools are hidden from `tools/list` | `403`, or "Unknown tool" |
+| Gateway → server | Per-server Google ID token; the server verifies signature, issuer, audience, expiry and that the caller is the gateway's service account | `401` / `403` |
+| Network | Default-deny ingress; only the gateway may reach the servers; servers and agent have restricted egress | connection blocked |
+| Cloud identity | One Google service account per workload, narrowest role, bound with Workload Identity; no keys | IAM denial |
+| Input | Tools validate arguments (enums, length limits, UUIDs, clamped numbers, allow-listed namespace) | tool error |
+| Audit | Gateway access log (status, caller) and one structured line per tool call in every server (caller, tool, outcome; argument values are never logged) | n/a |
+
+## The AI agent
+
+`./scripts/ask.sh viewer "<question>"` runs the agent once as a Kubernetes Job and prints a transcript. The same code runs
+with two identities, and what it can do is decided by the token it receives, not by its prompt:
+
+| Identity | Tools the gateway offers | Can write |
+|---|---|---|
+| `agent-viewer` | 7 read tools | no, write tools are not in its tool list |
+| `agent-operator` | all 9 tools | yes (`tickets_create_ticket`, `tickets_update_ticket_status`) |
+
+Text returned by a tool (a ticket description, a log line) is untrusted: it can contain instructions aimed at the model
+(prompt injection). The agent labels tool output as data and its system prompt forbids following it, but that is a
+mitigation, not a guarantee. The guarantee comes from the token: a viewer agent that is fully fooled still has no write
+tool to call. The test suite plants an injection payload in a ticket to verify this.
+
+![Agent answering a two-server question](docs/evidence/agent-facts.png)
+![Agent reading a ticket that contains an injection payload](docs/evidence/agent-injection.png)
+![Agent with an operator token creating a ticket](docs/evidence/agent-write.png)
+
+## Tests
+
+`./scripts/test.sh` runs 70 checks against the live cluster, in four suites. Every "denied" check is paired with a check
+that the same action succeeds where it should, so a broken setup cannot pass by rejecting everything.
+
+| Suite | What it verifies | Checks |
+|---|---|---|
+| Flow | discovery documents; token issuance; gateway authentication (garbage, untrusted-key, tampered and wrong-audience tokens → 401, no role → 403); per-tool authorization; data from all three servers; input validation | 30 |
+| Isolation | each server refuses everyone but the gateway (including a genuine Google-signed token for another audience); only the gateway can reach the servers; servers can open HTTPS but not plain HTTP or SMTP | 19 |
+| Agent | the Gemini agent answers a question that needs two servers; a prompt-injection payload cannot make a viewer agent write; an operator agent creates a ticket | 12 |
+| Resilience | after killing Keycloak the same signing key is used and no gateway change is needed; after replacing the gateway pod the same policy applies | 9 |
+
+The repository was verified from an empty project: everything destroyed with `down.sh`, rebuilt with `up.sh`, and the full
+suite passed (last run 2026-10-10).
 
 ![Flow tests](docs/evidence/test-output-flow.png)
 ![Isolation tests](docs/evidence/test-output-isolation.png)
 ![Agent tests](docs/evidence/test-output-agent.png)
 ![Resilience tests](docs/evidence/test-output-resilience.png)
 
-## The AI agent
+## Running it
 
-`./scripts/ask.sh viewer "<question>"` runs the agent once as a Kubernetes Job and prints its transcript. The **same
-code** runs with two identities; what it can do is decided by its token, not its code:
-
-| Identity | Tools the gateway offers | Can it write? |
-|---|---|---|
-| `agent-viewer` | 7 read tools | no: write tools are not even in its tool list |
-| `agent-operator` | 9 tools | yes: `tickets_create_ticket`, `tickets_update_ticket_status` |
-
-![Agent: two servers](docs/evidence/agent-facts.png)
-![Agent: prompt injection](docs/evidence/agent-injection.png)
-![Agent: operator writes](docs/evidence/agent-write.png)
-
-In the injection run the model recognised the planted instruction and ignored it. **Do not rely on that.** The guarantee is
-structural: the viewer's token carries no write tools, so even a fully fooled model has nothing to call. (An operator agent
-*is* exposed to injection through its write tools; production needs an approval step for writes. See Known gaps.)
-
-By hand, the servers' own audit lines, the gateway log, what runs, and the identities:
-
-![By hand](docs/evidence/cli-session.png)
-![Server audit](docs/evidence/server-audit.png)
-![Gateway log](docs/evidence/gateway-log.png)
-![Cluster](docs/evidence/cluster.png)
-![Identities](docs/evidence/iam.png)
-
-## Run it
+Prerequisites: `gcloud` (authenticated, project with billing), `terraform` ≥ 1.9, `kubectl`, `helm` ≥ 3.12, `python3`,
+`openssl`, `bq`, and the `gke-gcloud-auth-plugin`.
 
 ```bash
-gcloud config set project <your-project>     # billing linked
-./scripts/up.sh      # ~15 min from nothing: cluster, registry, identities, image builds, data, Keycloak, servers, agent, policies
-./scripts/test.sh    # 70 live checks (~10 min); non-zero exit if any fail
+gcloud config set project <your-project>
+./scripts/up.sh      # about 15 minutes: cluster, registry, identities, image builds, data, Keycloak, servers, policies
+./scripts/test.sh    # 70 live checks, about 10 minutes; exits non-zero if any fail
 ./scripts/ask.sh viewer "How many pods are running, and which cloud service costs the most?"
-./scripts/pf.sh      # (optional) keep port-forwards open, then use tests/cli.py by hand
-./scripts/down.sh    # delete everything and prove nothing billable is left
-```
-Hands-on commands and troubleshooting: [docs/runbook.md](docs/runbook.md). Design notes: [docs/architecture.md](docs/architecture.md).
-
-**Cost:** the GKE free-tier credit covers the management fee for one Autopilot cluster; you pay for requested pod
-CPU/memory (about 6 small pods, plus a short-lived Job per agent run and Gemini tokens) and nothing else of note (no public load balancer any more). Leave it up for hours, not weeks.
-
-## Layout
-
-```
-terraform/     cluster, per-workload Google service accounts + Workload Identity, BigQuery, Firestore, registry, build identity
-deploy/chart/  Helm chart: Keycloak + realm-as-code, 3 servers, Gateway/Backend/Route, policies, NetworkPolicies, RBAC
-servers/       the MCP servers (Python) + the shared security kit (mcpkit) + unit tests + Dockerfile + cloudbuild.yaml
-agent/         the AI agent (Gemini via Vertex AI + the MCP client), Dockerfile, cloudbuild.yaml
-tests/         test_flow · test_isolation · test_agent · test_resilience, cli.py (poke it by hand), transcript.py
-scripts/       up · test · ask · pf · down · build-images · seed-finops · capture-evidence · lib
-spike/         findings from the first proof-of-concept (historical; superseded by the build above)
-docs/          how-mcp-works, architecture, runbook, diagram + evidence generators (docs/diagrams), captured evidence
+./scripts/pf.sh      # keep port-forwards open, then use tests/cli.py by hand
+./scripts/down.sh    # destroy everything and verify nothing billable remains
 ```
 
-## Roadmap
+No environment is kept running by this repository. Generated secrets (client secrets, Keycloak admin password, the realm
+signing key) are written to `.secrets/`, which is git-ignored.
 
-| Milestone | Status |
+**Cost.** The GKE free-tier credit covers the management fee of one Autopilot cluster. You pay for the CPU and memory the
+pods request (about six small pods, plus a short-lived Job per agent run), BigQuery and Firestore usage (negligible here)
+and Gemini tokens. The gateway has no public load balancer. Tear down when finished.
+
+Hands-on commands and troubleshooting: [docs/runbook.md](docs/runbook.md).
+
+## Repository layout
+
+```text
+terraform/     cluster, per-workload Google service accounts and Workload Identity bindings, BigQuery, Firestore,
+               Artifact Registry, build identity
+deploy/chart/  Helm chart: Keycloak with the realm as code, the three servers, Gateway/Backend/Route, policies,
+               NetworkPolicies, RBAC, agent resources
+servers/       the MCP servers, the shared security kit (mcpkit), unit tests, Dockerfile, cloudbuild.yaml
+agent/         the AI agent (Gemini via Vertex AI plus an MCP client), Dockerfile, cloudbuild.yaml
+tests/         test_flow, test_isolation, test_agent, test_resilience; cli.py (call the gateway by hand)
+scripts/       up, test, ask, pf, down, build-images, seed-finops, capture-evidence, lib
+docs/          how-mcp-works, architecture, runbook; diagram and screenshot generators (docs/diagrams);
+               captured evidence (docs/evidence)
+```
+
+## Documentation
+
+| Document | Read it for |
 |---|---|
-| 1. Gateway on Autopilot, federation, JWT, per-tool RBAC | done |
-| 2. Keycloak IdP + MCP discovery flow + role check | done |
-| 3. Three real servers, Workload Identity per server, gateway-to-server auth, NetworkPolicy, image build, audit lines | done |
-| 4. **AI agent (Gemini), prompt-injection test, pinned IdP signing key, resilience tests** | **done** |
-| Next | gateway rate limits and OpenTelemetry tracing · TLS public entry point (WAF, allow-list) · Keycloak on a persistent database · human login (auth code + PKCE) · image scanning/signing · CI · an approval step for agent writes |
+| [docs/how-mcp-works.md](docs/how-mcp-works.md) | What MCP, a gateway, OAuth and JWT are, how they fit together, one gateway versus many, best practices |
+| [docs/architecture.md](docs/architecture.md) | How this system works internally: components, request lifecycle, every check and where it runs, identities, network, deployment, decisions, failure behaviour |
+| [docs/runbook.md](docs/runbook.md) | Operating it: build, test, call it by hand, change policy, add a server, troubleshooting |
 
-## Known gaps (deliberate for now)
+## Limitations
 
-* **The gateway is cluster-internal only.** Reached through `kubectl port-forward`. A public, TLS-terminated entry point (with a WAF and an allow-list) is milestone 4.
-* **Keycloak runs in dev mode with an in-memory database.** The realm is re-imported from a Secret on every start, and its signing key is pinned (generated once into `.secrets/`), so restarts are harmless (tested). But sessions and anything created at runtime are lost, and the key sits in a Kubernetes Secret: production wants a persistent database, an HSM/KMS-backed key and a rotation procedure (rotation = add the new key, wait out the gateway's 5-minute key cache, retire the old).
-* **Machine clients only.** Client-credentials grant. Human login (authorization code + PKCE) and dynamic client registration (deprecated in the July 2026 MCP revision in favour of Client ID Metadata Documents) are not exercised.
-* **An operator agent can be talked into writing.** The viewer/operator split limits the damage of a fooled model to what its role allows; an operator agent still has write tools. Production needs human approval for writes, rate limits per caller, and output filtering. None are built.
-* **End-user identity stops at the gateway.** Servers know "the gateway called", not which user; the gateway's access log has the caller. Propagating a user identity downstream (token exchange) is not done.
-* **Images are built by Cloud Build as a dedicated service account, but nothing scans or signs them yet** (no vulnerability gate, no Binary Authorization). Nodes pull as the default compute service account, limited to this one repository; a dedicated node account needs a new cluster.
-* **One replica per workload**, no PodDisruptionBudgets or autoscaling. Fine for a lab, not for an SLO.
-* The synthetic billing data is generated by `scripts/seed-finops.sh`; it is not real billing.
-* The cluster API is reachable from your public IP only (`authorized_cidr`); if your IP changes, re-run `up.sh`.
+These are deliberate scope boundaries, not undocumented behaviour.
+
+* **No public entry point.** The gateway is cluster-internal and reached with `kubectl port-forward`. A public deployment
+  needs TLS termination, a WAF and an allow-list in front of it.
+* **Keycloak runs in development mode** with an in-memory database. The realm is re-imported from a Secret at every start
+  and its signing key is pinned, so restarts are harmless, but runtime state (sessions, anything created after start-up) is
+  lost and the key sits in a Kubernetes Secret. Production needs a persistent database and an HSM- or KMS-backed key with a
+  rotation procedure.
+* **Machine clients only.** Agents use the client-credentials grant. Human login (authorization code with PKCE) and dynamic
+  client registration (deprecated in the 2026-07-28 MCP revision in favour of Client ID Metadata Documents) are not
+  exercised.
+* **An operator agent can be manipulated into writing.** Roles bound the damage of a fooled model to what its role allows;
+  the operator role still has write tools. Production needs human approval for writes, per-caller rate limits and output
+  filtering. None are implemented.
+* **The end user's identity stops at the gateway.** Servers know that the gateway called, not which user is behind the call;
+  the gateway's access log records the caller. Propagating a user identity downstream needs token exchange.
+* **No rate limits or distributed tracing** at the gateway.
+* **Images are built in Cloud Build by a dedicated service account but are not scanned or signed**, and there is no CI
+  pipeline. Nodes pull as the project's default compute service account, limited to the one repository; a dedicated node
+  account requires a new cluster.
+* **One replica per workload**, with no PodDisruptionBudgets or autoscaling.
+* **The billing data is synthetic**, generated by `scripts/seed-finops.sh`.
+* **The cluster API is reachable only from the public IP used at `up.sh` time** (`authorized_cidr`); re-run `up.sh` if it changes.
