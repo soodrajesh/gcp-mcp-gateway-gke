@@ -16,8 +16,25 @@ keycloak:
     agent-norole:   {secret: "", role: "",           audience: true}   # valid token, no role: must be denied
     agent-noaud:    {secret: "", role: mcp-operator, audience: false}  # token is not addressed to this gateway (no audience)
 
-serverImage: python:3.13-slim
 
 # scripts/up.sh installs with enabled=false first, waits for Keycloak, then enables: the gateway fetches the
 # IdP's signing keys when the policy appears, so Keycloak must already be serving them.
 policies: {enabled: true}
+
+# ── set by scripts/up.sh from Terraform outputs / the image build ─────────────────────────────────────────────────────
+image: ""                  # europe-west1-docker.pkg.dev/<project>/mcp/mcp-servers:sha-<hash>
+project: ""
+gatewayGsa: ""             # Google service account the gateway runs as: the only caller the servers accept
+replicas: 1
+
+# MCP servers behind the gateway. Name -> Google service account (Workload Identity) and server settings.
+servers:
+  k8s:     {gsa: "", env: {ALLOWED_NAMESPACES: mcp-platform}}
+  finops:  {gsa: "", env: {DATASET: mcp_finops}}
+  tickets: {gsa: "", env: {FIRESTORE_DATABASE: ""}}
+
+# Tools a `viewer` may call, per server (the server's own tool names). Everything else is operator-only.
+viewerTools:
+  k8s: [list_pods, get_pod_events, get_pod_logs]
+  finops: [cost_by_service, top_cost_skus]
+  tickets: [list_tickets, get_ticket]

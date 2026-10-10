@@ -59,13 +59,30 @@ gen_secrets() {
     [ -f "$SECRETS/$n" ] || ( umask 077; openssl rand -hex 16 > "$SECRETS/$n" )
   done
 }
+SUFFIX_FILE="$ROOT/.deploy-suffix"
+# Firestore will not let a deleted database name be reused straight away, so each deployment gets its own suffix.
+resolve_suffix() {
+  [ -f "$SUFFIX_FILE" ] || printf -- '-%s' "$(date +%y%m%d%H%M)" > "$SUFFIX_FILE"
+  export TF_VAR_suffix="$(cat "$SUFFIX_FILE")"
+}
+tf_out() { $TF output -raw "$1"; }
+# Terraform outputs the chart needs
+load_outputs() {
+  GATEWAY_GSA="$(tf_out gateway_gsa)"; FINOPS_GSA="$(tf_out finops_gsa)"; TICKETS_GSA="$(tf_out tickets_gsa)"
+  FIRESTORE_DB="$(tf_out firestore_database)"; IMAGE_REPO="$(tf_out image_repo)"
+  IMAGE_TAG="sha-$(cd "$ROOT/servers" && find . -type f \( -name '*.py' -o -name Dockerfile -o -name requirements.txt \) -not -path './tests/*' | sort | xargs shasum | shasum | cut -c1-12)"
+  IMAGE="$IMAGE_REPO/mcp-servers:$IMAGE_TAG"
+}
 helm_deploy() { # extra helm args...
   helm upgrade -i mcp-platform "$ROOT/deploy/chart" -n "$NS" --create-namespace \
     --set keycloak.adminPassword="$(cat "$SECRETS/kc-admin")" \
     --set keycloak.clients.agent-viewer.secret="$(cat "$SECRETS/agent-viewer")" \
     --set keycloak.clients.agent-operator.secret="$(cat "$SECRETS/agent-operator")" \
     --set keycloak.clients.agent-norole.secret="$(cat "$SECRETS/agent-norole")" \
-    --set keycloak.clients.agent-noaud.secret="$(cat "$SECRETS/agent-noaud")" "$@" >/dev/null
+    --set keycloak.clients.agent-noaud.secret="$(cat "$SECRETS/agent-noaud")" \
+    --set gatewayGsa="${GATEWAY_GSA:?run load_outputs first}" --set project="$PROJECT_ID" --set image="$IMAGE" \
+    --set servers.finops.gsa="$FINOPS_GSA" --set servers.tickets.gsa="$TICKETS_GSA" \
+    --set servers.tickets.env.FIRESTORE_DATABASE="$FIRESTORE_DB" "$@" >/dev/null
 }
 # port-forward the gateway and Keycloak to localhost (the canonical URLs in the chart); sets PF_PIDS
 start_port_forwards() {

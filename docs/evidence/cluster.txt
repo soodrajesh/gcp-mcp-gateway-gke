@@ -1,17 +1,26 @@
-$ kubectl get pods,gateway,agentgatewaypolicy -n mcp-platform
+$ kubectl get pods,svc,networkpolicy -n mcp-platform
 NAME                               READY   STATUS    RESTARTS   AGE
-pod/keycloak-6bd8bd7f67-8pz74      1/1     Running   0          2m31s
-pod/mcp-alpha-55b9779c45-r6p5l     1/1     Running   0          2m31s
-pod/mcp-beta-69d8ccbd49-dh69l      1/1     Running   0          2m31s
-pod/mcp-gateway-6497db4cdd-7wwnr   1/1     Running   0          2m30s
+pod/keycloak-6bd8bd7f67-j2gvj      1/1     Running   0          3m31s
+pod/mcp-finops-5574b76995-w78mg    1/1     Running   0          3m31s
+pod/mcp-gateway-6d7bb95575-t2lp4   1/1     Running   0          3m30s
+pod/mcp-k8s-7cb69b556f-hckrr       1/1     Running   0          3m31s
+pod/mcp-tickets-54f4c79c5f-rhxwx   1/1     Running   0          3m31s
 
-NAME                                            CLASS          ADDRESS         PROGRAMMED   AGE
-gateway.gateway.networking.k8s.io/mcp-gateway   agentgateway   <external-ip>   True         2m31s
+NAME                  TYPE        CLUSTER-IP       EXTERNAL-IP   PORT(S)    AGE
+service/keycloak      ClusterIP   <ip>   <none>        8080/TCP   3m31s
+service/mcp-finops    ClusterIP   <ip>   <none>        8000/TCP   3m31s
+service/mcp-gateway   ClusterIP   <ip>   <none>        80/TCP     3m30s
+service/mcp-k8s       ClusterIP   <ip>    <none>        8000/TCP   3m31s
+service/mcp-tickets   ClusterIP   <ip>    <none>        8000/TCP   3m31s
 
-NAME                                            ACCEPTED   ATTACHED   AGE
-agentgatewaypolicy.agentgateway.dev/mcp-authn   True       True       62s
-agentgatewaypolicy.agentgateway.dev/tool-rbac   True       True       62s
+NAME                                                   POD-SELECTOR                                         AGE
+networkpolicy.networking.k8s.io/clients-to-gateway     gateway.networking.k8s.io/gateway-name=mcp-gateway   3m32s
+networkpolicy.networking.k8s.io/default-deny-ingress   <none>                                               3m32s
+networkpolicy.networking.k8s.io/gateway-egress         gateway.networking.k8s.io/gateway-name=mcp-gateway   3m32s
+networkpolicy.networking.k8s.io/gateway-to-servers     app.kubernetes.io/component=mcp-server               3m32s
+networkpolicy.networking.k8s.io/keycloak-ingress       app=keycloak                                         3m32s
+networkpolicy.networking.k8s.io/servers-egress         app.kubernetes.io/component=mcp-server               3m32s
 
 $ kubectl get pods -n agentgateway-system
 NAME                            READY   STATUS    RESTARTS   AGE
-agentgateway-55957b74fd-86q56   1/1     Running   0          32m
+agentgateway-55957b74fd-86q56   1/1     Running   0          74m

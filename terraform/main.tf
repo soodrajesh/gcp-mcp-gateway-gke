@@ -5,6 +5,9 @@ resource "google_project_service" "apis" {
     "artifactregistry.googleapis.com",
     "iam.googleapis.com",
     "serviceusage.googleapis.com",
+    "bigquery.googleapis.com",
+    "firestore.googleapis.com",
+    "cloudbuild.googleapis.com",
   ])
   project            = var.project_id
   service            = each.value

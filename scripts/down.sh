@@ -9,10 +9,10 @@ if gcloud container clusters describe "$CLUSTER" --region "$REGION" --project "$
   kubectl delete ns "$NS" agentgateway-system --wait=true --timeout=300s 2>&1 | tail -2 || true
 fi
 $TF init -input=false -backend-config="bucket=$STATE_BUCKET" >/dev/null
-set_authorized_cidr
+set_authorized_cidr; resolve_suffix
 log "Destroy plan"
 $TF plan -destroy -input=false -no-color -out=down.tfplan | grep -E "will be destroyed|^Plan:" || true
-$TF apply -input=false -no-color down.tfplan | tail -2; rm -f terraform/down.tfplan
+$TF apply -input=false -no-color down.tfplan | tail -2; rm -f terraform/down.tfplan "$SUFFIX_FILE"
 log "Verify nothing billable is left"
 c="$(gcloud container clusters list --project "$PROJECT_ID" --format='value(name)' | grep -c . || true)"
 f="$(gcloud compute forwarding-rules list --project "$PROJECT_ID" --format='value(name)' | grep -c . || true)"
