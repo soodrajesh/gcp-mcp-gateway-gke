@@ -18,7 +18,7 @@
                          # The last suite kills the Keycloak and gateway pods on purpose.
 ./scripts/ask.sh viewer "How many pods are running, and which cloud service costs the most?"   # the AI agent, as a Job
 ./scripts/ask.sh operator "Open a ticket titled 'Investigate Keycloak restarts' with high priority"
-./scripts/capture-evidence.sh   # re-capture docs/evidence/*.txt from the live cluster (then render PNGs with docs/diagrams/termshot.py)
+./scripts/capture-evidence.sh   # re-capture docs/evidence/*.txt from the live cluster (then `PYTHON=<venv with playwright> docs/diagrams/render_evidence.sh` renders the PNGs; needs Google Chrome)
 ```
 
 ## Try it yourself
