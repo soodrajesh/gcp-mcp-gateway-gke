@@ -1,5 +1,9 @@
 # Spike findings (2026-10-10)
 
+> **HISTORICAL.** Notes from the first proof-of-concept (two toy servers, selector targets, a throwaway signing key). The platform was
+> rebuilt properly afterwards: see the README and `docs/architecture.md`. Several "not yet verified" items below are verified there
+> (Keycloak, MCP discovery, OpenTelemetry is still not done), and selector targets were replaced by static targets.
+
 Throwaway GKE Autopilot cluster (europe-west1), agentgateway v1.6.0, two stateless MCP servers
 (Python SDK `mcp` 2.3.0, `MCPServer`, `stateless_http=True`). Captured output, not expected output.
 

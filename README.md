@@ -9,6 +9,8 @@ verifies it, decides which *tools* that caller may see or call, and forwards to 
 > **Status: milestone 4 of 4 (core complete).** Identity, gateway policy, three real MCP servers with keyless cloud
 > identities, service-to-service authentication, network lockdown, an AI agent and restart resilience are built and tested
 > end to end (**70 live checks**). Rate limits, tracing, a TLS entry point and CI are listed under [Roadmap](#roadmap).
+> **Environment state:** torn down after the final verification (nothing is running or billing); `./scripts/up.sh` rebuilds it.
+>
 > **Verified from zero on 2026-10-10:** everything was destroyed with `./scripts/down.sh`, rebuilt with `./scripts/up.sh`
 > (cluster, registry, identities, two image builds, data, Keycloak, servers, policies; about 15 minutes) and `./scripts/test.sh`
 > passed 70/70 on the fresh build. Every output below is captured from real runs.
@@ -90,7 +92,8 @@ servers/       the MCP servers (Python) + the shared security kit (mcpkit) + uni
 agent/         the AI agent (Gemini via Vertex AI + the MCP client), Dockerfile, cloudbuild.yaml
 tests/         test_flow · test_isolation · test_agent · test_resilience, cli.py (poke it by hand), transcript.py
 scripts/       up · test · ask · pf · down · build-images · seed-finops · capture-evidence · lib
-docs/          how-mcp-works, architecture, runbook, diagram generator, captured evidence
+spike/         findings from the first proof-of-concept (historical; superseded by the build above)
+docs/          how-mcp-works, architecture, runbook, diagram + evidence generators (docs/diagrams), captured evidence
 ```
 
 ## Roadmap

@@ -13,7 +13,7 @@
 Components (namespace `mcp-platform`, deployed by the Helm chart in `deploy/chart`): `keycloak` (IdP, realm imported from a Secret),
 `mcp-gateway` (the proxy the controller creates for the `Gateway`), `AgentgatewayBackend mcp` (federates the servers by label),
 `HTTPRoute mcp` (`/mcp` plus the two `.well-known` discovery paths), `AgentgatewayPolicy mcp-authn` (JWT + MCP discovery + role)
-and `tool-rbac` (per-tool CEL), `mcp-k8s`, `mcp-finops`, `mcp-tickets` (stateless streamable HTTP, one image, `SERVER` selects the behaviour), six NetworkPolicies and a read-only `Role`. Namespace `agentgateway-system`: the controller.
+and `tool-rbac` (per-tool CEL), `mcp-k8s`, `mcp-finops`, `mcp-tickets` (stateless streamable HTTP, one image, `SERVER` selects the behaviour), seven NetworkPolicies (default-deny ingress, gateway→servers, Keycloak ingress, clients→gateway, and egress limits for the servers, the gateway and the agent) and a read-only `Role`. Namespace `agentgateway-system`: the controller.
 
 9. **The AI agent** is a short-lived Job (label `mcp-client`, its own Kubernetes ServiceAccount bound to a Google service account whose only role is `aiplatform.user`). It performs steps 1-6 as `agent-viewer` or `agent-operator`, lists the tools the gateway offers *to that identity*, hands them to Gemini, and executes the calls the model asks for. It has no route to the servers and holds no credential for them.
 
@@ -35,10 +35,9 @@ and `tool-rbac` (per-tool CEL), `mcp-k8s`, `mcp-finops`, `mcp-tickets` (stateles
 | Authorization at the gateway, by token claim | One place to change who can use which tool; servers stay simple. Defence in depth (server-side checks) is planned. |
 
 ## Not built yet (target)
-Three real servers (k8s read-only ops, BigQuery FinOps,
-Firestore tickets); Workload Identity per server; NetworkPolicy default-deny and a private VPC; an ADK/Gemini agent;
-audit logging and tracing. The gateway should exchange tokens for downstream calls rather than pass the caller's
-token through (the MCP spec forbids passthrough).
+Gateway rate limits, OpenTelemetry tracing and a TLS public entry point (WAF, allow-list); Keycloak on a persistent database
+and human login (authorization code + PKCE); image scanning/signing and CI; propagating the end user's identity downstream
+(token exchange); a human-approval step for agent writes. See the README roadmap and known gaps.
 
 ## Regenerating the diagram
 `python3 docs/diagrams/architecture.py && python3 docs/diagrams/render.py docs/img/architecture.svg docs/img/architecture.png`
