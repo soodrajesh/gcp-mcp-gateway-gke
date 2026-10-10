@@ -69,6 +69,11 @@ Firestore, the container registry and the build identity.
 
 ## 4. Request lifecycle
 
+The step numbers in the diagram (1 to 8) map to this section as follows: steps 1 to 4 are §4.1 (getting a token), step 5 is
+§4.2 items 1 to 3 and §5.1 to §5.3, step 6 is §4.2 items 4 to 8 and §5.5 to §5.6, step 7 is §4.2 item 9 and §6, and step 8 is
+§10. Two HTTP status codes appear throughout: **401 Unauthorized** means the gateway cannot tell who is calling (no token, or an
+invalid or expired one); **403 Forbidden** means it knows who is calling but that role is not allowed.
+
 ### 4.1 Getting a token and discovering where to authenticate
 
 ```

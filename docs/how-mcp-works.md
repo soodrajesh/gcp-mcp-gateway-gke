@@ -74,7 +74,7 @@ A user asks the agent: "How many pods are running, and which cloud service costs
 1. The LLM replies with a request to call `k8s_list_pods(namespace="mcp-platform")`. (The model's output is text; nothing
    has been called yet.)
 2. The agent sends `tools/call` to the gateway with `Authorization: Bearer <token>`.
-3. The gateway verifies the token (signature, issuer, audience, expiry). Invalid: `401`.
+3. The gateway verifies the token (signature, issuer, audience, expiry). Invalid: `401` (HTTP *Unauthorized*: "I cannot tell who you are").
 4. The gateway checks that this identity may use this tool. Not allowed: the tool is not even in its `tools/list`, and a
    direct call returns "Unknown tool".
 5. The gateway chooses the server that owns the tool and calls it, presenting **its own** credential for that server
@@ -234,6 +234,8 @@ was never offered a write tool.
 
 | Term | Meaning |
 |---|---|
+| **401 Unauthorized** | HTTP status meaning "I cannot tell who you are": no token, or an invalid or expired one |
+| **403 Forbidden** | HTTP status meaning "I know who you are, but you are not allowed to do this" |
 | **Audience (`aud`)** | The intended recipient of a token. A service must reject tokens not addressed to it |
 | **Authorization server** | The OAuth component that authenticates callers and issues tokens (Keycloak here) |
 | **CEL** | Common Expression Language, the small expression language used for the gateway's authorization rules |
