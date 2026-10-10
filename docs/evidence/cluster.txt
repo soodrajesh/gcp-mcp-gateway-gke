@@ -1,18 +1,17 @@
-$ kubectl get pods -n agentgateway-system -n spike
-NAME                                  READY   STATUS    RESTARTS   AGE
-agentgateway-55957b74fd-86q56         1/1     Running   0          4m49s
-agentgateway-proxy-6dc44b77db-5kg9b   1/1     Running   0          3m22s
-NAME                         READY   STATUS    RESTARTS   AGE
-mcp-alpha-55b9779c45-8dqjt   1/1     Running   0          3m27s
-mcp-beta-69d8ccbd49-gvdsq    1/1     Running   0          3m27s
+$ kubectl get pods,gateway,agentgatewaypolicy -n mcp-platform
+NAME                               READY   STATUS    RESTARTS   AGE
+pod/keycloak-6bd8bd7f67-8pz74      1/1     Running   0          2m31s
+pod/mcp-alpha-55b9779c45-r6p5l     1/1     Running   0          2m31s
+pod/mcp-beta-69d8ccbd49-dh69l      1/1     Running   0          2m31s
+pod/mcp-gateway-6497db4cdd-7wwnr   1/1     Running   0          2m30s
 
-$ kubectl get gateway,agentgatewaybackend,agentgatewaypolicy -A
-NAMESPACE             NAME                                                   CLASS          ADDRESS          PROGRAMMED   AGE
-agentgateway-system   gateway.gateway.networking.k8s.io/agentgateway-proxy   agentgateway   <external-ip>   True         3m24s
+NAME                                            CLASS          ADDRESS         PROGRAMMED   AGE
+gateway.gateway.networking.k8s.io/mcp-gateway   agentgateway   <external-ip>   True         2m31s
 
-NAMESPACE   NAME                                       ACCEPTED   AGE
-spike       agentgatewaybackend.agentgateway.dev/mcp   True       3m23s
+NAME                                            ACCEPTED   ATTACHED   AGE
+agentgatewaypolicy.agentgateway.dev/mcp-authn   True       True       62s
+agentgatewaypolicy.agentgateway.dev/tool-rbac   True       True       62s
 
-NAMESPACE             NAME                                            ACCEPTED   ATTACHED   AGE
-agentgateway-system   agentgatewaypolicy.agentgateway.dev/jwt         True       True       2m42s
-spike                 agentgatewaypolicy.agentgateway.dev/tool-rbac   True       True       2m42s
+$ kubectl get pods -n agentgateway-system
+NAME                            READY   STATUS    RESTARTS   AGE
+agentgateway-55957b74fd-86q56   1/1     Running   0          32m

@@ -23,8 +23,10 @@ CLUSTER="${CLUSTER:-mcp-gw-eu}"
 AGW_VERSION="${AGW_VERSION:-v1.6.0}"
 TF="terraform -chdir=$ROOT/terraform"
 STATE_BUCKET="${PROJECT_ID}-tfstate"
-PF_PORT="${PF_PORT:-18080}"
-KEYS="$ROOT/.spike"
+NS="${NS:-mcp-platform}"
+SECRETS="$ROOT/.secrets"
+GW_PORT="${GW_PORT:-18080}"
+KC_PORT="${KC_PORT:-18081}"
 PY="$ROOT/.venv/bin/python"
 
 my_ip() { curl -fsS https://api.ipify.org 2>/dev/null || curl -fsS https://ifconfig.me 2>/dev/null; }
@@ -48,4 +50,27 @@ wait_for() { # <description> <timeout-seconds> <command...>
     sleep 5
   done
   ok "$desc"
+}
+
+# helm values for the chart: secrets are generated once and kept in .secrets/ (gitignored)
+gen_secrets() {
+  mkdir -p "$SECRETS"; chmod 700 "$SECRETS"
+  for n in kc-admin agent-viewer agent-operator agent-norole agent-noaud; do
+    [ -f "$SECRETS/$n" ] || ( umask 077; openssl rand -hex 16 > "$SECRETS/$n" )
+  done
+}
+helm_deploy() { # extra helm args...
+  helm upgrade -i mcp-platform "$ROOT/deploy/chart" -n "$NS" --create-namespace \
+    --set keycloak.adminPassword="$(cat "$SECRETS/kc-admin")" \
+    --set keycloak.clients.agent-viewer.secret="$(cat "$SECRETS/agent-viewer")" \
+    --set keycloak.clients.agent-operator.secret="$(cat "$SECRETS/agent-operator")" \
+    --set keycloak.clients.agent-norole.secret="$(cat "$SECRETS/agent-norole")" \
+    --set keycloak.clients.agent-noaud.secret="$(cat "$SECRETS/agent-noaud")" "$@" >/dev/null
+}
+# port-forward the gateway and Keycloak to localhost (the canonical URLs in the chart); sets PF_PIDS
+start_port_forwards() {
+  kubectl -n "$NS" port-forward svc/mcp-gateway "$GW_PORT:80" >/dev/null 2>&1 & PF_PIDS="$!"
+  kubectl -n "$NS" port-forward svc/keycloak "$KC_PORT:8080" >/dev/null 2>&1 & PF_PIDS="$PF_PIDS $!"
+  wait_for "gateway reachable on localhost:$GW_PORT" 60 bash -c "curl -s -o /dev/null http://localhost:$GW_PORT/.well-known/oauth-protected-resource/mcp"
+  wait_for "Keycloak reachable on localhost:$KC_PORT" 60 bash -c "curl -sf -o /dev/null http://localhost:$KC_PORT/realms/mcp"
 }

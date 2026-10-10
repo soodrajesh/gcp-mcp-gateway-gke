@@ -1,16 +1,32 @@
-$ spike/cli.py list viewer
+$ tests/cli.py token agent-viewer
+{
+  "exp": 1791657744,
+  "iss": "http://keycloak.mcp-platform.svc.cluster.local:8080/realms/mcp",
+  "aud": [
+    "http://mcp-gateway.mcp-platform.svc.cluster.local/mcp",
+    "http://localhost:18080/mcp"
+  ],
+  "azp": "agent-viewer",
+  "scope": "mcp-gateway",
+  "roles": [
+    "mcp-viewer"
+  ]
+}
+$ tests/cli.py list agent-viewer
 mcp-alpha-8000_read_thing
 mcp-beta-8000_read_thing
-$ spike/cli.py list operator
+$ tests/cli.py list agent-operator
 mcp-alpha-8000_read_thing
 mcp-alpha-8000_write_thing
 mcp-beta-8000_read_thing
 mcp-beta-8000_write_thing
-$ spike/cli.py call viewer mcp-alpha-8000_read_thing key=hello
+$ tests/cli.py call agent-viewer mcp-alpha-8000_read_thing key=hello
 alpha: read hello
-$ spike/cli.py call viewer mcp-alpha-8000_write_thing key=a value=b
-REFUSED as viewer: Unknown tool: mcp-alpha-8000_write_thing
-$ spike/cli.py call operator mcp-alpha-8000_write_thing key=a value=b
+$ tests/cli.py call agent-viewer mcp-alpha-8000_write_thing key=a value=b
+REFUSED as agent-viewer: Unknown tool: mcp-alpha-8000_write_thing
+$ tests/cli.py call agent-operator mcp-alpha-8000_write_thing key=a value=b
 alpha: wrote a=b
-$ spike/cli.py list expired
-REFUSED as expired: HTTP 401 (token rejected)
+$ tests/cli.py list agent-noaud
+REFUSED as agent-noaud: HTTP 401 (Server returned an error response)
+$ tests/cli.py list agent-norole
+REFUSED as agent-norole: HTTP 403 (Server returned an error response)

@@ -1,0 +1,45 @@
+{{- if .Values.policies.enabled }}
+# 1) Authentication + discovery: every request needs a Keycloak-issued JWT for this gateway, and a role.
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayPolicy
+metadata: {name: mcp-authn, namespace: {{ .Release.Namespace }}}
+spec:
+  targetRefs: [{group: gateway.networking.k8s.io, kind: HTTPRoute, name: mcp}]
+  traffic:
+    jwtAuthentication:
+      mode: Strict
+      providers:
+      - issuer: {{ .Values.issuer | quote }}
+        audiences: [{{ .Values.resource | quote }}, {{ .Values.clusterResource | quote }}]
+        jwks:
+          remote:
+            backendRef: {name: keycloak, kind: Service, port: 8080}
+            jwksPath: /realms/{{ .Values.realm }}/protocol/openid-connect/certs
+            cacheDuration: 5m   # signing keys rotate; this bounds how long a rotated key stays unknown (chart minimum is 5m)
+      mcp:
+        provider: Keycloak
+        resourceMetadata:
+          resource: {{ .Values.resource | quote }}
+          scopesSupported: [mcp-gateway]
+          bearerMethodsSupported: [header]
+    authorization:
+      action: Allow
+      policy:
+        matchExpressions:
+        - 'has(jwt.roles) && jwt.roles.exists(r, r == "mcp-viewer" || r == "mcp-operator")'
+---
+# 2) Per-tool authorization: operator everything; viewer only read tools. Everything else is hidden and refused.
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayPolicy
+metadata: {name: tool-rbac, namespace: {{ .Release.Namespace }}}
+spec:
+  targetRefs: [{group: agentgateway.dev, kind: AgentgatewayBackend, name: mcp}]
+  backend:
+    mcp:
+      authorization:
+        action: Allow
+        policy:
+          matchExpressions:
+          - 'jwt.roles.exists(r, r == "mcp-operator")'
+          - 'jwt.roles.exists(r, r == "mcp-viewer") && mcp.tool.name.endsWith("read_thing")'
+{{- end }}

@@ -1,22 +1,35 @@
 [1;32m✔ gateway reachable on localhost:18080[0m
+[1;32m✔ Keycloak reachable on localhost:18081[0m
 
-1. Authentication (every request must carry a valid token)
-  PASS  no token -> rejected with HTTP 401  -> statuses=[401, 401]
-  PASS  garbage token -> rejected with HTTP 401  -> statuses=[401, 401]
-  PASS  expired token -> rejected with HTTP 401  -> statuses=[401, 401]
-  PASS  wrong audience -> rejected with HTTP 401  -> statuses=[401, 401]
-  PASS  signed by an untrusted key -> rejected with HTTP 401  -> statuses=[401, 401]
+A. Discovery (diagram steps 1-4: no token, then find out where to authenticate)
+  PASS  1  request without a token -> HTTP 401  -> status=401
+  PASS  2  401 carries WWW-Authenticate pointing at the resource metadata  -> Bearer resource_metadata="http://localhost:18080/.well-known/oauth-protected-resource/mcp"
+  PASS  3  protected-resource metadata names this gateway as the resource  -> resource=http://localhost:18080/mcp
+  PASS     ... and advertises the scope clients should request
+  PASS  4  authorization-server metadata (via the gateway) points at the IdP's token endpoint  -> .cluster.local:8080/realms/mcp/protocol/openid-connect/token
 
-2. Viewer role (read tools only)
-  PASS  viewer can list tools
+B. Getting a token (diagram steps 5-6: authenticate at the IdP)
+  PASS  wrong client secret -> the IdP refuses (HTTP 401, no token issued)  -> status=401
+  PASS  viewer token: issuer is the IdP  -> http://keycloak.mcp-platform.svc.cluster.local:8080/realms/mcp
+  PASS  viewer token: audience is this gateway  -> ['http://mcp-gateway.mcp-platform.svc.cluster.local/mcp', 'http://localhost:18080/mcp']
+  PASS  viewer token: role claim is mcp-viewer only  -> ['mcp-viewer']
+  PASS  operator token: role claim is mcp-operator
+
+C. Gateway authentication (step 7: every request carries a token the gateway can verify)
+  PASS  garbage token -> HTTP 401  -> status=401
+  PASS  operator's claims signed with a key the gateway does not trust -> HTTP 401  -> status=401
+  PASS  real operator token with a tampered signature -> HTTP 401  -> status=401
+  PASS  valid Keycloak token that is not addressed to this gateway (no audience) -> HTTP 401  -> status=401
+  PASS  valid token with the right audience but NO role -> denied (not 200)  -> status=403
+  PASS  positive control: the viewer's real token is accepted
+
+D. Per-tool authorization (viewer: read only; operator: everything)
   PASS  viewer sees both servers' read tools  -> ['mcp-alpha-8000_read_thing', 'mcp-beta-8000_read_thing']
   PASS  viewer sees NO write tools
   PASS  viewer can call alpha read_thing  -> alpha: read k
   PASS  viewer can call beta read_thing  -> beta: read k
   PASS  viewer calling write_thing is refused  -> Unknown tool: mcp-alpha-8000_write_thing
-
-3. Operator role (everything)
-  PASS  operator sees all 4 tools (2 servers x read/write)  -> ['mcp-alpha-8000_read_thing', 'mcp-alpha-8000_write_thing', 'mcp-beta-8000_read_thing', 'mcp-beta-8000_write_thing']
+  PASS  operator sees all 4 tools  -> ['mcp-alpha-8000_read_thing', 'mcp-alpha-8000_write_thing', 'mcp-beta-8000_read_thing', 'mcp-beta-8000_write_thing']
   PASS  operator can call write_thing  -> beta: wrote k=v
 
-13 passed, 0 failed
+23 passed, 0 failed
