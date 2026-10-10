@@ -66,10 +66,28 @@ async def list_tools(c):
     return sorted(t.name for t in (await c.list_tools()).tools)
 
 
+class ToolFailed(Exception):
+    """The server ran the tool and reported an error (bad argument, namespace not allowed, ...)."""
+
+
+def payload(r):
+    """A tool result as plain Python: the structured value if there is one, else the text items joined."""
+    sc = getattr(r, "structured_content", None)
+    if sc is not None:
+        return sc.get("result", sc) if isinstance(sc, dict) else sc
+    text = "\n".join(c.text for c in r.content)
+    try:
+        return json.loads(text)      # a tool that returns a dict arrives as one JSON text item
+    except ValueError:
+        return text
+
+
 async def call(c, name, **args):
-    """The tool's text, or the exception it raised (a refusal is a normal outcome to assert on)."""
+    """The tool's result, or the exception it raised (a refusal is a normal outcome to assert on)."""
     try:
         r = await c.call_tool(name, args)
-        return r.content[0].text
     except Exception as e:  # noqa: BLE001
         return e
+    if r.is_error:
+        return ToolFailed(" ".join(getattr(c_, "text", "") for c_ in r.content))
+    return payload(r)

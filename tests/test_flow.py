@@ -5,7 +5,9 @@ import asyncio, sys
 import jwt
 from cryptography.hazmat.primitives.asymmetric import rsa
 
-from common import (GATEWAY, KEYCLOAK, MCP_URL, REALM, call, claims, get_token, http_get, leaf, list_tools, session)
+import uuid
+
+from common import (GATEWAY, MCP_URL, REALM, ToolFailed, call, claims, get_token, http_get, leaf, list_tools, session)
 
 RESULTS: list[bool] = []
 RESOURCE = MCP_URL
@@ -64,19 +66,43 @@ async def main() -> int:
     res, _ = await session(viewer, list_tools)
     check("positive control: the viewer's real token is accepted", isinstance(res, list))
 
-    print("\nD. Per-tool authorization (viewer: read only; operator: everything)")
-    names = res if isinstance(res, list) else []
-    check("viewer sees both servers' read tools", {"mcp-alpha-8000_read_thing", "mcp-beta-8000_read_thing"} <= set(names), str(names))
-    check("viewer sees NO write tools", not any("write" in n for n in names))
-    for srv in ("alpha", "beta"):
-        r, _ = await session(viewer, lambda c, s=srv: call(c, f"mcp-{s}-8000_read_thing", key="k"))
-        check(f"viewer can call {srv} read_thing", r == f"{srv}: read k", str(r)[:50])
-    r, _ = await session(viewer, lambda c: call(c, "mcp-alpha-8000_write_thing", key="k", value="v"))
-    check("viewer calling write_thing is refused", isinstance(r, BaseException) and "Unknown tool" in str(leaf(r)), str(leaf(r))[:60])
+    print("\nD. Per-tool authorization (viewer: read-only allow-list; operator: everything)")
+    READ = {"k8s_list_pods", "k8s_get_pod_events", "k8s_get_pod_logs", "finops_cost_by_service", "finops_top_cost_skus",
+            "tickets_list_tickets", "tickets_get_ticket"}
+    WRITE = {"tickets_create_ticket", "tickets_update_ticket_status"}
+    names = set(res) if isinstance(res, list) else set()
+    check("viewer sees exactly the 7 read tools of the 3 servers", names == READ, str(sorted(names ^ READ)))
+    check("viewer sees NO write tools", not (names & WRITE))
     r, _ = await session(operator, list_tools)
-    check("operator sees all 4 tools", isinstance(r, list) and len(r) == 4, str(r))
-    r, _ = await session(operator, lambda c: call(c, "mcp-beta-8000_write_thing", key="k", value="v"))
-    check("operator can call write_thing", r == "beta: wrote k=v", str(r)[:50])
+    check("operator sees all 9 tools", isinstance(r, list) and set(r) == READ | WRITE, str(r))
+    for w, args in (("tickets_create_ticket", {"title": "x"}), ("tickets_update_ticket_status", {"ticket_id": "x", "status": "closed"})):
+        r, _ = await session(viewer, lambda c, w=w, args=args: call(c, w, **args))
+        check(f"viewer calling {w} is refused", isinstance(r, BaseException) and "Unknown tool" in str(leaf(r)), str(leaf(r))[:50])
+
+    print("\nE. The three real servers, through the gateway, with real data")
+    r, _ = await session(viewer, lambda c: call(c, "k8s_list_pods", namespace="mcp-platform"))
+    pods = [p["name"] for p in r] if isinstance(r, list) else []
+    check("k8s: lists the platform's pods (keycloak, gateway, 3 servers)",
+          all(any(p.startswith(x) for p in pods) for x in ("keycloak", "mcp-gateway", "mcp-k8s", "mcp-finops", "mcp-tickets")), str(pods)[:90])
+    r, _ = await session(viewer, lambda c: call(c, "k8s_list_pods", namespace="kube-system"))
+    check("k8s: a namespace outside the allow-list is refused by the server", isinstance(r, ToolFailed), str(r)[:60])
+    r, _ = await session(viewer, lambda c: call(c, "finops_cost_by_service", days=30))
+    check("finops: BigQuery returns cost per service, highest first",
+          isinstance(r, list) and len(r) >= 6 and r[0]["cost_usd"] >= r[-1]["cost_usd"] > 0, str(r[:2]) if isinstance(r, list) else str(r))
+    r, _ = await session(viewer, lambda c: call(c, "finops_top_cost_skus", days=7, limit=3))
+    check("finops: top SKUs honours the limit", isinstance(r, list) and len(r) == 3, str(r)[:80])
+    title = f"live test {uuid.uuid4().hex[:8]}"
+    r, _ = await session(operator, lambda c: call(c, "tickets_create_ticket", title=title, description="created by test_flow", priority="high"))
+    tid = r.get("id") if isinstance(r, dict) else None
+    check("tickets: operator creates a ticket (written to Firestore)", bool(tid) and r.get("status") == "open", str(r)[:70])
+    r, _ = await session(viewer, lambda c: call(c, "tickets_get_ticket", ticket_id=tid or "none"))
+    check("tickets: viewer reads it back", isinstance(r, dict) and r.get("title") == title, str(r)[:60])
+    r, _ = await session(operator, lambda c: call(c, "tickets_create_ticket", title="bad", priority="urgent"))
+    check("tickets: invalid input is rejected by the server", isinstance(r, ToolFailed), str(r)[:60])
+    r, _ = await session(operator, lambda c: call(c, "tickets_update_ticket_status", ticket_id=tid or "none", status="closed"))
+    check("tickets: operator closes it", isinstance(r, dict) and r.get("status") == "closed", str(r)[:60])
+    r, _ = await session(viewer, lambda c: call(c, "tickets_list_tickets", status="closed"))
+    check("tickets: it now shows in the closed list", isinstance(r, list) and any(t["id"] == tid for t in r))
 
     failed = RESULTS.count(False)
     print(f"\n{len(RESULTS) - failed} passed, {failed} failed")

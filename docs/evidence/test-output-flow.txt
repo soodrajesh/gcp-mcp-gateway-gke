@@ -1,0 +1,44 @@
+✔ gateway reachable on localhost:18080
+✔ Keycloak reachable on localhost:18081
+
+A. Discovery (diagram steps 1-4: no token, then find out where to authenticate)
+  PASS  1  request without a token -> HTTP 401  -> status=401
+  PASS  2  401 carries WWW-Authenticate pointing at the resource metadata  -> Bearer resource_metadata="http://localhost:18080/.well-known/oauth-protected-resource/mcp"
+  PASS  3  protected-resource metadata names this gateway as the resource  -> resource=http://localhost:18080/mcp
+  PASS     ... and advertises the scope clients should request
+  PASS  4  authorization-server metadata (via the gateway) points at the IdP's token endpoint  -> .cluster.local:8080/realms/mcp/protocol/openid-connect/token
+
+B. Getting a token (diagram steps 5-6: authenticate at the IdP)
+  PASS  wrong client secret -> the IdP refuses (HTTP 401, no token issued)  -> status=401
+  PASS  viewer token: issuer is the IdP  -> http://keycloak.mcp-platform.svc.cluster.local:8080/realms/mcp
+  PASS  viewer token: audience is this gateway  -> ['http://mcp-gateway.mcp-platform.svc.cluster.local/mcp', 'http://localhost:18080/mcp']
+  PASS  viewer token: role claim is mcp-viewer only  -> ['mcp-viewer']
+  PASS  operator token: role claim is mcp-operator
+
+C. Gateway authentication (step 7: every request carries a token the gateway can verify)
+  PASS  garbage token -> HTTP 401  -> status=401
+  PASS  operator's claims signed with a key the gateway does not trust -> HTTP 401  -> status=401
+  PASS  real operator token with a tampered signature -> HTTP 401  -> status=401
+  PASS  valid Keycloak token that is not addressed to this gateway (no audience) -> HTTP 401  -> status=401
+  PASS  valid token with the right audience but NO role -> denied (not 200)  -> status=403
+  PASS  positive control: the viewer's real token is accepted
+
+D. Per-tool authorization (viewer: read-only allow-list; operator: everything)
+  PASS  viewer sees exactly the 7 read tools of the 3 servers  -> []
+  PASS  viewer sees NO write tools
+  PASS  operator sees all 9 tools  -> ['finops_cost_by_service', 'finops_top_cost_skus', 'k8s_get_pod_events', 'k8s_get_pod_logs', 'k8s_list_pods', 'tickets_create_ticket', 'tickets_get_ticket', 'tickets_list_tickets', 'tickets_update_ticket_status']
+  PASS  viewer calling tickets_create_ticket is refused  -> Unknown tool: tickets_create_ticket
+  PASS  viewer calling tickets_update_ticket_status is refused  -> Unknown tool: tickets_update_ticket_status
+
+E. The three real servers, through the gateway, with real data
+  PASS  k8s: lists the platform's pods (keycloak, gateway, 3 servers)  -> ['keycloak-6bd8bd7f67-j2gvj', 'mcp-finops-5574b76995-w78mg', 'mcp-gateway-6d7bb95575-t2lp4
+  PASS  k8s: a namespace outside the allow-list is refused by the server  -> Error executing tool list_pods
+  PASS  finops: BigQuery returns cost per service, highest first  -> [{'service': 'Compute Engine', 'cost_usd': 2997.12}, {'service': 'BigQuery', 'cost_usd': 1650.23}]
+  PASS  finops: top SKUs honours the limit  -> [{'service': 'Compute Engine', 'sku': 'N2 Instance Core', 'cost_usd': 569.22}, {
+  PASS  tickets: operator creates a ticket (written to Firestore)  -> {'id': '447acd0b-b6d5-49e9-b90c-02000f4abe0d', 'description': 'created
+  PASS  tickets: viewer reads it back  -> {'id': '447acd0b-b6d5-49e9-b90c-02000f4abe0d', 'description'
+  PASS  tickets: invalid input is rejected by the server  -> Error executing tool create_ticket
+  PASS  tickets: operator closes it  -> {'id': '447acd0b-b6d5-49e9-b90c-02000f4abe0d', 'description'
+  PASS  tickets: it now shows in the closed list
+
+30 passed, 0 failed

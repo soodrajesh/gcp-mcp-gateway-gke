@@ -1,0 +1,26 @@
+F. Each server refuses anyone but the gateway (checked directly, bypassing the gateway)
+  PASS  tickets: /healthz answers without a token (probe path)
+  PASS  tickets: no token -> 401  -> 401
+  PASS  tickets: garbage token -> 401
+  PASS  finops: /healthz answers without a token (probe path)
+  PASS  finops: no token -> 401  -> 401
+  PASS  finops: garbage token -> 401
+  PASS  k8s: /healthz answers without a token (probe path)
+  PASS  k8s: no token -> 401  -> 401
+  PASS  k8s: garbage token -> 401
+  PASS  tickets: a GENUINE Google-signed token for a different audience -> 401  -> status=401
+
+G. Network lockdown (NetworkPolicy): only the gateway reaches the servers
+  PASS  a pod with no allow-label cannot reach a server  -> BLOCKED
+  PASS  a pod in another namespace cannot reach a server  -> BLOCKED
+  PASS  positive control: a pod labelled mcp-client CAN reach the gateway  -> 200
+  PASS  ... but even a labelled client cannot reach a server directly  -> BLOCKED
+  PASS  an unlabelled pod cannot reach the gateway  -> BLOCKED
+  PASS  an unlabelled pod cannot reach Keycloak  -> BLOCKED
+
+H. Servers have limited egress (DNS, metadata, HTTPS only)
+  PASS  positive control: a server can open HTTPS (443) to the internet
+  PASS  a server cannot open plain HTTP (80) to the internet
+  PASS  a server cannot open SMTP (25) to the internet
+
+19 passed, 0 failed

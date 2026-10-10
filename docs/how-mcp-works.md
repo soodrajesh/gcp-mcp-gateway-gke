@@ -1,7 +1,7 @@
 # How MCP, gateways, OAuth and JWT fit together
 
 Written for someone who wants the whole picture before the code. Items marked **[demo]** you can run today in
-this repo (`./scripts/up.sh`, then `tests/cli.py`); items marked **[planned]** are the next build.
+this repo (`./scripts/up.sh`, then `tests/cli.py`); items marked **[planned]** are not built yet.
 
 ## 1. The pieces
 
@@ -18,8 +18,8 @@ this repo (`./scripts/up.sh`, then `tests/cli.py`); items marked **[planned]** a
 | **LLM** | Decides *which* tool to call and with what arguments. Never calls anything itself. | Gemini (planned) |
 | **Host / agent** | The app that runs the LLM and executes its tool requests. | the planned ADK agent; today `tests/cli.py` |
 | **MCP client** | The connection library inside the host. Speaks MCP to one endpoint. | Python SDK `Client` |
-| **MCP server** | A small service that exposes **tools** (and optionally resources and prompts) over MCP. | `mcp-alpha`, `mcp-beta` **[demo]** |
-| **Tool** | A named function with a description and an input schema: `read_thing(key)`. The server runs it. | `read_thing`, `write_thing` **[demo]** |
+| **MCP server** | A small service that exposes **tools** (and optionally resources and prompts) over MCP. | `k8s`, `finops`, `tickets` **[demo]** |
+| **Tool** | A named function with a description and an input schema: `list_pods(namespace)`. The server runs it. | `k8s_list_pods`, `finops_cost_by_service`, `tickets_create_ticket` **[demo]** |
 | **MCP gateway** | A proxy in front of the servers. One URL for the agent; it authenticates, authorizes, routes, rate-limits and audits. | agentgateway **[demo]** |
 | **IdP / authorization server** | Authenticates callers and **issues tokens**. Separate from the gateway and from the servers. | Keycloak **[demo]** |
 | **JWT** | The token format: a signed JSON document. Anyone holding the IdP's public key can verify it offline. | `tests/cli.py token agent-viewer` **[demo]** |
@@ -44,7 +44,8 @@ An agent is asked "what pods are crashing?". Behind that one sentence:
  8  Server → Gateway → Agent: result  →  LLM reads it and answers
 ```
 Steps 3, 4 and the 401/refusal behaviour are what `./scripts/test.sh` proves today (13 checks). **[demo]**
-Steps 5 (audit) and 6 (gateway-to-server token) are **[planned]**.
+Steps 5 (gateway log + the servers' own audit line: caller, tool, outcome, never argument values) and 6 (the gateway's own
+token, a Google ID token with a per-server audience) are **[demo]**; rate limits and guardrails at step 5 are **[planned]**.
 
 ## 3. OAuth and JWT, in the order they happen
 
@@ -111,17 +112,17 @@ global gateway spanning prod and dev; a gateway that passes the caller's token s
 |---|---|---|
 | Servers are OAuth *resource servers*; a separate IdP issues tokens | Spec requirement; keeps secrets and login out of every server | **[demo]** (the gateway is the resource server today) |
 | Validate `aud`, `iss`, `exp`, signature on **every** request | Stops token reuse across services | **[demo]**: wrong audience, tampered and untrusted-key tokens all 401 |
-| **No token passthrough**: gateway exchanges for a token scoped to the server | Spec forbids it; prevents the confused-deputy problem | **[planned]** |
+| **No token passthrough**: the gateway authenticates to each server as itself, with a token whose audience is that server | Spec forbids passthrough; prevents the confused-deputy problem | **[demo]** (server-side verification tested; the end user's identity is not carried downstream) |
 | Least privilege per tool, default deny, hide what the caller cannot use | An agent can only misuse what it can see | **[demo]** |
 | Short-lived tokens, narrow scopes, step-up for sensitive tools | Limits damage from a leaked token | **[planned]** |
-| Each server runs as its own service account (Workload Identity, no keys) | Server compromise ≠ project compromise | **[planned]** |
-| Network: only the gateway can reach servers (default-deny NetworkPolicy) | Auth is bypassed if servers are reachable directly | **[planned]** |
-| Audit every decision (caller, tool, allow/deny) but never log argument values | Accountability without leaking secrets | gateway log has caller+status **[demo]**; tool-level audit **[planned]** |
+| Each server runs as its own service account (Workload Identity, no keys), narrowest role | Server compromise ≠ project compromise | **[demo]**: one dataset, one Firestore database, one namespace; zero user-managed keys |
+| Network: only the gateway can reach servers (default-deny NetworkPolicy), limited egress | Auth is bypassed if servers are reachable directly | **[demo]**: 9 live checks with positive controls |
+| Audit every decision (caller, tool, allow/deny) but never log argument values | Accountability without leaking secrets | **[demo]**: gateway access log + a structured audit line per tool call in each server |
 | Rate limits per caller and tool | An agent in a loop is a denial-of-service on your own systems | **[planned]** |
 | Treat tool *output* and tool *descriptions* as untrusted | Prompt injection and "tool poisoning": text from a tool can try to instruct the LLM | **[planned]** guardrails + description pinning |
-| Stateless servers, health checks, 2+ replicas | Survives restarts; scales horizontally | stateless **[demo]** |
-| TLS everywhere; no public plaintext listener | Tokens are bearer credentials | public HTTP today (known gap) |
-| Human approval for destructive tools (writes/deletes) | LLMs make mistakes | **[planned]** (tickets server) |
+| Stateless servers, health checks, 2+ replicas | Survives restarts; scales horizontally | stateless + probes **[demo]**; 1 replica (lab) |
+| TLS everywhere; no public plaintext listener | Tokens are bearer credentials | no public listener **[demo]** (cluster-internal); TLS entry point **[planned]** |
+| Human approval for destructive tools (writes/deletes) | LLMs make mistakes | writes are operator-only **[demo]**; an approval step is **[planned]** |
 
 ## 7. See it yourself (about two minutes)
 
@@ -133,7 +134,7 @@ global gateway spanning prod and dev; a gateway that passes the caller's token s
 .venv/bin/python tests/cli.py list agent-operator   # operator: 4 tools (same gateway, different view)
 .venv/bin/python tests/cli.py list agent-noaud      # HTTP 401: valid Keycloak token, not addressed to this gateway
 .venv/bin/python tests/cli.py list agent-norole     # HTTP 403: authenticated, but no role
-.venv/bin/python tests/cli.py call agent-viewer mcp-alpha-8000_write_thing key=a value=b   # authorization failed
+.venv/bin/python tests/cli.py call agent-viewer tickets_create_ticket title=x   # authorization failed: Unknown tool
 kubectl -n mcp-platform logs deploy/mcp-gateway --tail=5   # the audit trail: caller + status
 ```
 Two roles, one URL, different tool lists: that is authentication and authorization at a gateway in one picture.

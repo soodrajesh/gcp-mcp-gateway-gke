@@ -3,5 +3,8 @@
 source "$(dirname "$0")/lib.sh"
 need kubectl; [ -x "$PY" ] || die "run ./scripts/up.sh first"; [ -d "$SECRETS" ] || die "no .secrets/: run ./scripts/up.sh"
 cluster_credentials
-start_port_forwards; trap 'kill $PF_PIDS 2>/dev/null || true' EXIT
-"$PY" "$ROOT/tests/test_flow.py"
+start_port_forwards; trap 'kill $PF_PIDS 2>/dev/null; wait $PF_PIDS 2>/dev/null || true' EXIT
+rc=0
+"$PY" "$ROOT/tests/test_flow.py" || rc=1
+"$PY" "$ROOT/tests/test_isolation.py" || rc=1
+exit $rc

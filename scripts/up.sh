@@ -9,12 +9,12 @@ log "Project $PROJECT_ID · $REGION · cluster $CLUSTER · agentgateway $AGW_VER
 
 log "1/6 Python venv (MCP SDK + JWT tooling for the tests)"
 [ -x "$PY" ] || python3 -m venv "$ROOT/.venv"
-"$PY" -m pip install -q -r tests/requirements.txt && ok "mcp $("$PY" -m pip show mcp | awk '/^Version/{print $2}')"
+"$PY" -m pip install -q -r tests/requirements.txt -r servers/requirements-dev.txt && ok "mcp $("$PY" -m pip show mcp | awk '/^Version/{print $2}')"
 
 log "2/6 Terraform: state bucket + Autopilot cluster (~8-10 min the first time)"
 "$ROOT/scripts/bootstrap.sh" "$PROJECT_ID" "$REGION" >/dev/null && ok "gs://$STATE_BUCKET"
 $TF init -input=false -backend-config="bucket=$STATE_BUCKET" >/dev/null
-set_authorized_cidr
+set_authorized_cidr; resolve_suffix
 $TF plan -input=false -no-color -out=up.tfplan | grep -E "^\s+# .* (will be|must be)|^Plan:|^No changes" || true
 [ "$PLAN_ONLY" = 1 ] && exit 0
 $TF apply -input=false -no-color up.tfplan >/dev/null && rm -f terraform/up.tfplan && ok "cluster $CLUSTER ready"
@@ -28,11 +28,14 @@ helm upgrade -i --create-namespace -n agentgateway-system --version "$AGW_VERSIO
 helm upgrade -i -n agentgateway-system --version "$AGW_VERSION" agentgateway oci://cr.agentgateway.dev/charts/agentgateway --wait --timeout 8m >/dev/null
 ok "control plane running"
 
-log "5/6 Keycloak, MCP servers, gateway (policies come after Keycloak is serving its signing keys)"
+log "5/6 Server image, synthetic data, Keycloak, MCP servers, gateway (policies come after Keycloak is serving its signing keys)"
+load_outputs
+"$ROOT/scripts/build-images.sh"
+"$ROOT/scripts/seed-finops.sh"
 gen_secrets; ok "secrets in .secrets/ (gitignored)"
 if ! helm status mcp-platform -n "$NS" >/dev/null 2>&1; then helm_deploy --set policies.enabled=false; fi
 kubectl -n "$NS" rollout status deploy/keycloak --timeout=600s >/dev/null && ok "Keycloak ready (realm imported)"
-for d in mcp-alpha mcp-beta; do kubectl -n "$NS" rollout status deploy/$d --timeout=600s >/dev/null && ok "$d ready"; done
+for d in mcp-k8s mcp-finops mcp-tickets; do kubectl -n "$NS" rollout status deploy/$d --timeout=600s >/dev/null && ok "$d ready"; done
 wait_for "Gateway programmed" 300 bash -c "[ \"\$(kubectl -n $NS get gateway mcp-gateway -o jsonpath='{.status.conditions[?(@.type==\"Programmed\")].status}')\" = True ]"
 
 log "6/6 Policies: JWT + MCP discovery + role check, per-tool RBAC"

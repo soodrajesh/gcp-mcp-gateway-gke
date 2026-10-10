@@ -18,3 +18,5 @@ deploy.env
 .spike/
 __pycache__/
 .secrets/
+.deploy-suffix
+.gw.raw

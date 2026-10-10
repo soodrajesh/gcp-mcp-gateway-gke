@@ -1,0 +1,77 @@
+{{- /* Network lockdown for the namespace. Auth is the first wall; this is the second: a server that is reachable
+       by anything but the gateway can be called with no token check ever reaching the gateway. */ -}}
+# 1) Nothing may reach any pod in this namespace unless a rule below says so.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: default-deny-ingress, namespace: {{ .Release.Namespace }}}
+spec:
+  podSelector: {}
+  policyTypes: [Ingress]
+---
+# 2) Only the gateway proxy may call the MCP servers (and only on their port).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: gateway-to-servers, namespace: {{ .Release.Namespace }}}
+spec:
+  podSelector: {matchLabels: {app.kubernetes.io/component: mcp-server}}
+  policyTypes: [Ingress]
+  ingress:
+  - from: [{podSelector: {matchLabels: {gateway.networking.k8s.io/gateway-name: mcp-gateway}}}]
+    ports: [{protocol: TCP, port: 8000}]
+---
+# 3) Keycloak is reachable only by the gateway (control plane: signing keys; proxy: IdP metadata) and by labelled MCP clients.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: keycloak-ingress, namespace: {{ .Release.Namespace }}}
+spec:
+  podSelector: {matchLabels: {app: keycloak}}
+  policyTypes: [Ingress]
+  ingress:
+  - from:
+    - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: agentgateway-system}}
+    - podSelector: {matchLabels: {gateway.networking.k8s.io/gateway-name: mcp-gateway}}   # the proxy fetches the IdP's metadata
+    - podSelector: {matchLabels: {mcp-client: "true"}}
+    ports: [{protocol: TCP, port: 8080}]
+---
+# 4) The gateway accepts calls from labelled MCP clients (the agent) in this namespace.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: clients-to-gateway, namespace: {{ .Release.Namespace }}}
+spec:
+  podSelector: {matchLabels: {gateway.networking.k8s.io/gateway-name: mcp-gateway}}
+  policyTypes: [Ingress]
+  ingress:
+  - from: [{podSelector: {matchLabels: {mcp-client: "true"}}}]
+    ports: [{protocol: TCP, port: 80}]
+---
+# 5) Servers may only talk out to DNS, the metadata server (Workload Identity) and HTTPS (Google APIs, Kubernetes API).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: servers-egress, namespace: {{ .Release.Namespace }}}
+spec:
+  podSelector: {matchLabels: {app.kubernetes.io/component: mcp-server}}
+  policyTypes: [Egress]
+  egress:
+  - ports: [{protocol: UDP, port: 53}, {protocol: TCP, port: 53}]      # kube-dns and NodeLocal DNS (169.254.20.10)
+  - to: [{ipBlock: {cidr: 169.254.169.252/32}}, {ipBlock: {cidr: 169.254.169.254/32}}]   # GKE metadata server
+    ports: [{protocol: TCP, port: 988}, {protocol: TCP, port: 80}]
+  - ports: [{protocol: TCP, port: 443}]
+---
+# 6) The gateway proxy may only talk out to: DNS, the metadata server (to mint its identity token), its control plane
+#    (xDS), Keycloak and the MCP servers.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: gateway-egress, namespace: {{ .Release.Namespace }}}
+spec:
+  podSelector: {matchLabels: {gateway.networking.k8s.io/gateway-name: mcp-gateway}}
+  policyTypes: [Egress]
+  egress:
+  - ports: [{protocol: UDP, port: 53}, {protocol: TCP, port: 53}]
+  - to: [{ipBlock: {cidr: 169.254.169.252/32}}, {ipBlock: {cidr: 169.254.169.254/32}}]
+    ports: [{protocol: TCP, port: 988}, {protocol: TCP, port: 80}]
+  - to: [{namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: agentgateway-system}}}]
+    ports: [{protocol: TCP, port: 9978}]
+  - to: [{podSelector: {matchLabels: {app.kubernetes.io/component: mcp-server}}}]
+    ports: [{protocol: TCP, port: 8000}]
+  - to: [{podSelector: {matchLabels: {app: keycloak}}}]
+    ports: [{protocol: TCP, port: 8080}]

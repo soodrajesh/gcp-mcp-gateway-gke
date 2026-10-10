@@ -1,8 +1,24 @@
+# How the gateway's own pod/service/identity are built: its ServiceAccount is bound (Workload Identity) to a Google
+# service account, which is how it proves itself to the MCP servers; the Service is cluster-internal only.
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayParameters
+metadata: {name: mcp-gateway-params, namespace: {{ .Release.Namespace }}}
+spec:
+  serviceAccount:
+    metadata:
+      annotations:
+        iam.gke.io/gcp-service-account: {{ required "gatewayGsa is required" .Values.gatewayGsa | quote }}
+  service:
+    spec:
+      type: ClusterIP
+---
 apiVersion: gateway.networking.k8s.io/v1
 kind: Gateway
 metadata: {name: mcp-gateway, namespace: {{ .Release.Namespace }}}
 spec:
   gatewayClassName: agentgateway
+  infrastructure:
+    parametersRef: {group: agentgateway.dev, kind: AgentgatewayParameters, name: mcp-gateway-params}
   listeners: [{name: http, port: 80, protocol: HTTP}]
 ---
 apiVersion: agentgateway.dev/v1alpha1
@@ -10,11 +26,19 @@ kind: AgentgatewayBackend
 metadata: {name: mcp, namespace: {{ .Release.Namespace }}}
 spec:
   mcp:
+    # One static target per server. Each target carries its OWN credential for that server: a Google ID token whose
+    # audience is that server only, so a token minted for one server is useless against another.
     targets:
-    - name: alpha
-      selector: {services: {matchLabels: {app: mcp-alpha}}}
-    - name: beta
-      selector: {services: {matchLabels: {app: mcp-beta}}}
+{{- range $name, $_ := .Values.servers }}
+    - name: {{ $name }}
+      static:
+        host: mcp-{{ $name }}.{{ $.Release.Namespace }}.svc.cluster.local
+        port: 8000
+        protocol: StreamableHTTP
+        policies:
+          auth:
+            gcp: {type: IdToken, audience: {{ printf "mcp-%s" $name | quote }}}
+{{- end }}
 ---
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute

@@ -2,9 +2,10 @@
 
     .venv/bin/python tests/cli.py token agent-viewer              # show the decoded token claims
     .venv/bin/python tests/cli.py list agent-viewer               # tools this caller may see
-    .venv/bin/python tests/cli.py call agent-viewer mcp-alpha-8000_read_thing key=hello
-    .venv/bin/python tests/cli.py call agent-viewer mcp-alpha-8000_write_thing key=a value=b    # refused
-    .venv/bin/python tests/cli.py call agent-operator mcp-alpha-8000_write_thing key=a value=b  # allowed
+    .venv/bin/python tests/cli.py call agent-viewer k8s_list_pods namespace=mcp-platform
+    .venv/bin/python tests/cli.py call agent-viewer finops_cost_by_service days=30
+    .venv/bin/python tests/cli.py call agent-viewer tickets_create_ticket title=x            # refused: viewer
+    .venv/bin/python tests/cli.py call agent-operator tickets_create_ticket title=x priority=high
     .venv/bin/python tests/cli.py list agent-noaud                # valid token, not for this gateway: 401
     .venv/bin/python tests/cli.py list agent-norole               # right audience, no role: 403
 Clients: agent-viewer, agent-operator, agent-norole, agent-noaud.
@@ -32,6 +33,6 @@ async def main() -> int:
     res, seen = await session(token, lambda c: call(c, rest[0], **dict(a.split("=", 1) for a in rest[1:])))
     if isinstance(res, BaseException):
         print(f"REFUSED as {client}: {leaf(res)}" if not seen or seen[0][0] == 200 else f"REFUSED as {client}: HTTP {seen[0][0]}"); return 1
-    print(res); return 0
+    print(res if isinstance(res, str) else json.dumps(res, indent=2)); return 0
 
 sys.exit(asyncio.run(main()))

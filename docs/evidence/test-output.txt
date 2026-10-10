@@ -23,13 +23,50 @@ C. Gateway authentication (step 7: every request carries a token the gateway can
   PASS  valid token with the right audience but NO role -> denied (not 200)  -> status=403
   PASS  positive control: the viewer's real token is accepted
 
-D. Per-tool authorization (viewer: read only; operator: everything)
-  PASS  viewer sees both servers' read tools  -> ['mcp-alpha-8000_read_thing', 'mcp-beta-8000_read_thing']
+D. Per-tool authorization (viewer: read-only allow-list; operator: everything)
+  PASS  viewer sees exactly the 7 read tools of the 3 servers  -> []
   PASS  viewer sees NO write tools
-  PASS  viewer can call alpha read_thing  -> alpha: read k
-  PASS  viewer can call beta read_thing  -> beta: read k
-  PASS  viewer calling write_thing is refused  -> Unknown tool: mcp-alpha-8000_write_thing
-  PASS  operator sees all 4 tools  -> ['mcp-alpha-8000_read_thing', 'mcp-alpha-8000_write_thing', 'mcp-beta-8000_read_thing', 'mcp-beta-8000_write_thing']
-  PASS  operator can call write_thing  -> beta: wrote k=v
+  PASS  operator sees all 9 tools  -> ['finops_cost_by_service', 'finops_top_cost_skus', 'k8s_get_pod_events', 'k8s_get_pod_logs', 'k8s_list_pods', 'tickets_create_ticket', 'tickets_get_ticket', 'tickets_list_tickets', 'tickets_update_ticket_status']
+  PASS  viewer calling tickets_create_ticket is refused  -> Unknown tool: tickets_create_ticket
+  PASS  viewer calling tickets_update_ticket_status is refused  -> Unknown tool: tickets_update_ticket_status
 
-23 passed, 0 failed
+E. The three real servers, through the gateway, with real data
+  PASS  k8s: lists the platform's pods (keycloak, gateway, 3 servers)  -> ['keycloak-6bd8bd7f67-j2gvj', 'mcp-finops-5574b76995-w78mg', 'mcp-gateway-6d7bb95575-t2lp4
+  PASS  k8s: a namespace outside the allow-list is refused by the server  -> Error executing tool list_pods
+  PASS  finops: BigQuery returns cost per service, highest first  -> [{'service': 'Compute Engine', 'cost_usd': 2997.12}, {'service': 'BigQuery', 'cost_usd': 1650.23}]
+  PASS  finops: top SKUs honours the limit  -> [{'service': 'Compute Engine', 'sku': 'N2 Instance Core', 'cost_usd': 569.22}, {
+  PASS  tickets: operator creates a ticket (written to Firestore)  -> {'id': '447acd0b-b6d5-49e9-b90c-02000f4abe0d', 'description': 'created
+  PASS  tickets: viewer reads it back  -> {'id': '447acd0b-b6d5-49e9-b90c-02000f4abe0d', 'description'
+  PASS  tickets: invalid input is rejected by the server  -> Error executing tool create_ticket
+  PASS  tickets: operator closes it  -> {'id': '447acd0b-b6d5-49e9-b90c-02000f4abe0d', 'description'
+  PASS  tickets: it now shows in the closed list
+
+30 passed, 0 failed
+
+F. Each server refuses anyone but the gateway (checked directly, bypassing the gateway)
+  PASS  tickets: /healthz answers without a token (probe path)
+  PASS  tickets: no token -> 401  -> 401
+  PASS  tickets: garbage token -> 401
+  PASS  finops: /healthz answers without a token (probe path)
+  PASS  finops: no token -> 401  -> 401
+  PASS  finops: garbage token -> 401
+  PASS  k8s: /healthz answers without a token (probe path)
+  PASS  k8s: no token -> 401  -> 401
+  PASS  k8s: garbage token -> 401
+  PASS  tickets: a GENUINE Google-signed token for a different audience -> 401  -> status=401
+
+G. Network lockdown (NetworkPolicy): only the gateway reaches the servers
+  PASS  a pod with no allow-label cannot reach a server  -> BLOCKED
+  PASS  a pod in another namespace cannot reach a server  -> BLOCKED
+  PASS  positive control: a pod labelled mcp-client CAN reach the gateway  -> 200
+  PASS  ... but even a labelled client cannot reach a server directly  -> BLOCKED
+  PASS  an unlabelled pod cannot reach the gateway  -> BLOCKED
+  PASS  an unlabelled pod cannot reach Keycloak  -> BLOCKED
+
+H. Servers have limited egress (DNS, metadata, HTTPS only)
+  PASS  positive control: a server can open HTTPS (443) to the internet
+  PASS  a server cannot open plain HTTP (80) to the internet
+  PASS  a server cannot open SMTP (25) to the internet
+
+19 passed, 0 failed
+./scripts/test.sh: line 9: 97429 Terminated: 15          kubectl -n "$NS" port-forward svc/mcp-gateway "$GW_PORT:80" > /dev/null 2>&1

@@ -1,0 +1,12 @@
+$ gcloud projects get-iam-policy claude-code-507112   (PROJECT-level roles of the platform's service accounts)
+serviceAccount:mcp-build    logging.logWriter
+serviceAccount:mcp-finops   bigquery.jobUser
+serviceAccount:mcp-tickets  datastore.user     only-the-tickets-database
+(narrower grants live on the resource itself: BigQuery dataset viewer, registry reader/writer, build bucket reader,
+ and workloadIdentityUser binding each Kubernetes ServiceAccount to its Google one; see terraform/identities.tf, build.tf)
+
+keys on those service accounts (none = keyless, Workload Identity only):
+  mcp-gateway   user-managed keys: 0
+  mcp-finops    user-managed keys: 0
+  mcp-tickets   user-managed keys: 0
+  mcp-build     user-managed keys: 0

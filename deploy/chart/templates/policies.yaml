@@ -28,7 +28,8 @@ spec:
         matchExpressions:
         - 'has(jwt.roles) && jwt.roles.exists(r, r == "mcp-viewer" || r == "mcp-operator")'
 ---
-# 2) Per-tool authorization: operator everything; viewer only read tools. Everything else is hidden and refused.
+# 2) Per-tool authorization, default deny: operator may use every tool; viewer only the explicit read-only allow-list
+#    (values.yaml viewerTools). A tool nobody listed is hidden from viewers and refused.
 apiVersion: agentgateway.dev/v1alpha1
 kind: AgentgatewayPolicy
 metadata: {name: tool-rbac, namespace: {{ .Release.Namespace }}}
@@ -41,5 +42,7 @@ spec:
         policy:
           matchExpressions:
           - 'jwt.roles.exists(r, r == "mcp-operator")'
-          - 'jwt.roles.exists(r, r == "mcp-viewer") && mcp.tool.name.endsWith("read_thing")'
+          {{- range $target, $tools := .Values.viewerTools }}
+          - 'jwt.roles.exists(r, r == "mcp-viewer") && mcp.tool.target == "{{ $target }}" && mcp.tool.name in [{{ range $i, $t := $tools }}{{ if $i }}, {{ end }}"{{ $t }}"{{ end }}]'
+          {{- end }}
 {{- end }}
