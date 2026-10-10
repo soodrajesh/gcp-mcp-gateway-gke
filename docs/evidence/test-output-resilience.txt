@@ -1,10 +1,10 @@
 J. Resilience: restart the IdP and the gateway; nothing may need re-configuring
-  PASS  Keycloak was restarted (new pod Ready)  -> keycloak-58dcf9fb7c-zz2zj -> keycloak-58dcf9fb7c-ftp9t
+  PASS  Keycloak was restarted (new pod Ready)  -> keycloak-58dcf9fb7c-glvqg -> keycloak-58dcf9fb7c-56j7w
   PASS  the realm came back (a token is issued again)  -> status=200
   PASS  the restarted IdP signs with the SAME key id  -> VFgyDgn9IH == VFgyDgn9IH
   PASS  the gateway accepts the new token with NO policy change  -> status=200
   PASS  a token issued BEFORE the restart is still valid
-  PASS  the gateway pod was replaced (new pod Ready)  -> mcp-gateway-6d7bb95575-974k4 -> mcp-gateway-6d7bb95575-qlfl4
+  PASS  the gateway pod was replaced (new pod Ready)  -> mcp-gateway-78886c6469-2nwr6 -> mcp-gateway-78886c6469-sxx6k
   PASS  the new gateway pod enforces the same policy (operator sees all 9 tools)  -> 9
   PASS  ... and a viewer still sees only the 7 read tools
   PASS  ... and still refuses a garbage token (401)

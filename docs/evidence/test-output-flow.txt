@@ -11,7 +11,7 @@ A. Discovery (diagram steps 1-4: no token, then find out where to authenticate)
 B. Getting a token (diagram steps 5-6: authenticate at the IdP)
   PASS  wrong client secret -> the IdP refuses (HTTP 401, no token issued)  -> status=401
   PASS  viewer token: issuer is the IdP  -> http://keycloak.mcp-platform.svc.cluster.local:8080/realms/mcp
-  PASS  viewer token: audience is this gateway  -> ['http://mcp-gateway.mcp-platform.svc.cluster.local/mcp', 'http://localhost:18080/mcp']
+  PASS  viewer token: audience is this gateway  -> ['http://localhost:18080/mcp', 'http://mcp-gateway.mcp-platform.svc.cluster.local/mcp']
   PASS  viewer token: role claim is mcp-viewer only  -> ['mcp-viewer']
   PASS  operator token: role claim is mcp-operator
 
@@ -31,14 +31,14 @@ D. Per-tool authorization (viewer: read-only allow-list; operator: everything)
   PASS  viewer calling tickets_update_ticket_status is refused  -> Unknown tool: tickets_update_ticket_status
 
 E. The three real servers, through the gateway, with real data
-  PASS  k8s: lists the platform's pods (keycloak, gateway, 3 servers)  -> ['keycloak-58dcf9fb7c-zz2zj', 'mcp-finops-7bc85b5464-9j7nv', 'mcp-gateway-6d7bb95575-974k4
+  PASS  k8s: lists the platform's pods (keycloak, gateway, 3 servers)  -> ['keycloak-58dcf9fb7c-glvqg', 'mcp-finops-7bc85b5464-rpj5p', 'mcp-gateway-78886c6469-2nwr6
   PASS  k8s: a namespace outside the allow-list is refused by the server  -> Error executing tool list_pods
   PASS  finops: BigQuery returns cost per service, highest first  -> [{'service': 'Compute Engine', 'cost_usd': 2997.12}, {'service': 'BigQuery', 'cost_usd': 1650.23}]
   PASS  finops: top SKUs honours the limit  -> [{'service': 'Compute Engine', 'sku': 'N2 Instance Core', 'cost_usd': 569.22}, {
-  PASS  tickets: operator creates a ticket (written to Firestore)  -> {'id': '6caff453-0e1f-434d-a7f8-eb351157ffeb', 'status': 'open', 'titl
-  PASS  tickets: viewer reads it back  -> {'id': '6caff453-0e1f-434d-a7f8-eb351157ffeb', 'status': 'op
+  PASS  tickets: operator creates a ticket (written to Firestore)  -> {'id': 'ae3c335a-8833-464e-a8e3-5e84b7d15e9b', 'description': 'created
+  PASS  tickets: viewer reads it back  -> {'id': 'ae3c335a-8833-464e-a8e3-5e84b7d15e9b', 'description'
   PASS  tickets: invalid input is rejected by the server  -> Error executing tool create_ticket
-  PASS  tickets: operator closes it  -> {'id': '6caff453-0e1f-434d-a7f8-eb351157ffeb', 'updated_at':
+  PASS  tickets: operator closes it  -> {'id': 'ae3c335a-8833-464e-a8e3-5e84b7d15e9b', 'updated_at':
   PASS  tickets: it now shows in the closed list
 
 30 passed, 0 failed
