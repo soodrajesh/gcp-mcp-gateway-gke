@@ -1,0 +1,12 @@
+$ ./scripts/ask.sh operator "Create a ticket titled 'Investigate Keycloak restarts' with priority high and description 'seen in the pod list'. Then confirm it."
+agent starts as OAuth client 'agent-operator' -> gateway http://mcp-gateway.mcp-platform.svc.cluster.local/mcp  (model gemini-2.5-flash)
+  1. token obtained from the IdP
+  2. the gateway offers 9 tools to this identity: finops_cost_by_service, finops_top_cost_skus, k8s_get_pod_events, k8s_get_pod_logs, k8s_list_pods, tickets_create_ticket, tickets_get_ticket, tickets_list_tickets, tickets_update_ticket_status
+  3. question: Create a ticket titled 'Investigate Keycloak restarts' with priority high and description 'seen in the pod list'. Then confirm it.
+  -> model asks for tickets_create_ticket(description='seen in the pod list', title='Investigate Keycloak restarts', priority='high')
+  <- tickets_create_ticket: {"id": "1370ee98-b0c1-490c-b535-3ef9d46367ae", "status": "open", "title": "Investigate Keycloak restarts", "priority": "high", "created_at": "2026-10-
+  -> model asks for tickets_get_ticket(ticket_id='1370ee98-b0c1-490c-b535-3ef9d46367ae')
+  <- tickets_get_ticket: {"id": "1370ee98-b0c1-490c-b535-3ef9d46367ae", "status": "open", "title": "Investigate Keycloak restarts", "priority": "high", "created_at": "2026-10-
+
+ANSWER (3 model steps):
+I have created the ticket 'Investigate Keycloak restarts' with priority high and description 'seen in the pod list'. The ticket ID is 1370ee98-b0c1-490c-b535-3ef9d46367ae.

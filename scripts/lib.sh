@@ -58,6 +58,10 @@ gen_secrets() {
   for n in kc-admin agent-viewer agent-operator agent-norole agent-noaud; do
     [ -f "$SECRETS/$n" ] || ( umask 077; openssl rand -hex 16 > "$SECRETS/$n" )
   done
+  if [ ! -f "$SECRETS/realm-key.pem" ]; then
+    ( umask 077; openssl req -x509 -newkey rsa:2048 -nodes -days 3650 -subj "/CN=mcp-realm-signing" \
+        -keyout "$SECRETS/realm-key.pem" -out "$SECRETS/realm-cert.pem" 2>/dev/null )
+  fi
 }
 SUFFIX_FILE="$ROOT/.deploy-suffix"
 # Firestore will not let a deleted database name be reused straight away, so each deployment gets its own suffix.
@@ -66,12 +70,16 @@ resolve_suffix() {
   export TF_VAR_suffix="$(cat "$SUFFIX_FILE")"
 }
 tf_out() { $TF output -raw "$1"; }
+# Image tag = hash of the sources: an unchanged tree is never rebuilt
+src_tag() { echo "sha-$(cd "$ROOT/$1" && find . -type f \( -name '*.py' -o -name Dockerfile -o -name requirements.txt \) -not -path './tests/*' | sort | xargs shasum | shasum | cut -c1-12)"; }
 # Terraform outputs the chart needs
 load_outputs() {
   GATEWAY_GSA="$(tf_out gateway_gsa)"; FINOPS_GSA="$(tf_out finops_gsa)"; TICKETS_GSA="$(tf_out tickets_gsa)"
   FIRESTORE_DB="$(tf_out firestore_database)"; IMAGE_REPO="$(tf_out image_repo)"
-  IMAGE_TAG="sha-$(cd "$ROOT/servers" && find . -type f \( -name '*.py' -o -name Dockerfile -o -name requirements.txt \) -not -path './tests/*' | sort | xargs shasum | shasum | cut -c1-12)"
-  IMAGE="$IMAGE_REPO/mcp-servers:$IMAGE_TAG"
+  AGENT_GSA="$(tf_out agent_gsa)"
+  SERVERS_IMAGE="$IMAGE_REPO/mcp-servers:$(src_tag servers)"
+  AGENT_IMAGE="$IMAGE_REPO/mcp-agent:$(src_tag agent)"
+  IMAGE="$SERVERS_IMAGE"
 }
 helm_deploy() { # extra helm args...
   helm upgrade -i mcp-platform "$ROOT/deploy/chart" -n "$NS" --create-namespace \
@@ -80,7 +88,8 @@ helm_deploy() { # extra helm args...
     --set keycloak.clients.agent-operator.secret="$(cat "$SECRETS/agent-operator")" \
     --set keycloak.clients.agent-norole.secret="$(cat "$SECRETS/agent-norole")" \
     --set keycloak.clients.agent-noaud.secret="$(cat "$SECRETS/agent-noaud")" \
-    --set gatewayGsa="${GATEWAY_GSA:?run load_outputs first}" --set project="$PROJECT_ID" --set image="$IMAGE" \
+    --set-file keycloak.signingKey.privateKey="$SECRETS/realm-key.pem" --set-file keycloak.signingKey.certificate="$SECRETS/realm-cert.pem" \
+    --set gatewayGsa="${GATEWAY_GSA:?run load_outputs first}" --set project="$PROJECT_ID" --set image="$SERVERS_IMAGE" --set agent.image="$AGENT_IMAGE" --set agent.gsa="$AGENT_GSA" \
     --set servers.finops.gsa="$FINOPS_GSA" --set servers.tickets.gsa="$TICKETS_GSA" \
     --set servers.tickets.env.FIRESTORE_DATABASE="$FIRESTORE_DB" "$@" >/dev/null
 }

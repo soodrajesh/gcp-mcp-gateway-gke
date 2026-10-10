@@ -1,0 +1,12 @@
+$ ./scripts/ask.sh viewer "How many pods are in the mcp-platform namespace and are they all ready? Also, which cloud service cost the most over the last 30 days, and how much?"
+agent starts as OAuth client 'agent-viewer' -> gateway http://mcp-gateway.mcp-platform.svc.cluster.local/mcp  (model gemini-2.5-flash)
+  1. token obtained from the IdP
+  2. the gateway offers 7 tools to this identity: finops_cost_by_service, finops_top_cost_skus, k8s_get_pod_events, k8s_get_pod_logs, k8s_list_pods, tickets_get_ticket, tickets_list_tickets
+  3. question: How many pods are in the mcp-platform namespace and are they all ready? Also, which cloud service cost the most over the last 30 days, and how much?
+  -> model asks for k8s_list_pods(namespace='mcp-platform')
+  <- k8s_list_pods: [{"name": "agent-viewer-210007-9032-ts69f", "phase": "Running", "ready": "1/1", "restarts": 0, "started": "2026-10-10 20:00:08+00:00"}, {"name": "keyc
+  -> model asks for finops_cost_by_service(days=30)
+  <- finops_cost_by_service: [{"service": "Compute Engine", "cost_usd": 2997.12}, {"service": "BigQuery", "cost_usd": 1650.23}, {"service": "Kubernetes Engine", "cost_usd": 1602.5
+
+ANSWER (2 model steps):
+There are 6 pods in the `mcp-platform` namespace, and they are all ready. The cloud service that cost the most over the last 30 days was Compute Engine, with a cost of $2997.12.

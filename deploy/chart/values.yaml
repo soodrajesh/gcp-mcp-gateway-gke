@@ -9,6 +9,9 @@ realm: mcp
 
 keycloak:
   image: quay.io/keycloak/keycloak:26.7.1
+  # The realm's token-signing key. Fixed (not generated at start-up) so a restart or reschedule never changes the keys the
+  # gateway has cached. Generated once by scripts/up.sh into .secrets/; production: a secret manager / HSM-backed key.
+  signingKey: {privateKey: "", certificate: ""}
   adminPassword: ""        # set by scripts/up.sh (random, kept in .secrets/)
   clients:                 # confidential service clients: name -> secret (set by scripts/up.sh)
     agent-viewer:   {secret: "", role: mcp-viewer,   audience: true}
@@ -38,3 +41,10 @@ viewerTools:
   k8s: [list_pods, get_pod_events, get_pod_logs]
   finops: [cost_by_service, top_cost_skus]
   tickets: [list_tickets, get_ticket]
+
+# The AI agent (run as Jobs by scripts/ask.sh)
+agent:
+  image: ""                # set by scripts/up.sh
+  gsa: ""                  # Google service account (Terraform output agent_gsa): roles/aiplatform.user only
+  model: gemini-2.5-flash
+  location: europe-west1

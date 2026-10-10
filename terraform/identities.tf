@@ -108,3 +108,26 @@ output "finops_gsa" { value = google_service_account.finops.email }
 output "tickets_gsa" { value = google_service_account.tickets.email }
 output "firestore_database" { value = google_firestore_database.tickets.name }
 output "image_repo" { value = "${var.region}-docker.pkg.dev/${var.project_id}/${google_artifact_registry_repository.mcp.repository_id}" }
+
+# ── agent: may call Gemini on Vertex AI and nothing else ───────────────────────────────────────────────────────────────
+resource "google_service_account" "agent" {
+  project      = var.project_id
+  account_id   = "mcp-agent"
+  display_name = "MCP agent (Gemini on Vertex AI)"
+  depends_on   = [google_project_service.apis]
+}
+
+resource "google_service_account_iam_member" "agent_wi" {
+  service_account_id = google_service_account.agent.name
+  role               = "roles/iam.workloadIdentityUser"
+  member             = "serviceAccount:${var.project_id}.svc.id.goog[${local.ns}/mcp-agent]"
+  depends_on         = [google_container_cluster.this]
+}
+
+resource "google_project_iam_member" "agent_vertex" {
+  project = var.project_id
+  role    = "roles/aiplatform.user"
+  member  = "serviceAccount:${google_service_account.agent.email}"
+}
+
+output "agent_gsa" { value = google_service_account.agent.email }

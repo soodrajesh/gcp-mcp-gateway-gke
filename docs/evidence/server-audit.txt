@@ -1,6 +1,6 @@
 $ kubectl -n mcp-platform logs deploy/mcp-tickets deploy/mcp-finops      (one audit line per tool call; argument VALUES are never logged)
-{"ts": "2026-10-10T19:17:42Z", "event": "tool_call", "server": "tickets", "tool": "list_tickets", "caller": "mcp-gateway@claude-code-507112.iam.gserviceaccount.com", "arg_names": ["status"], "outcome"
-{"ts": "2026-10-10T19:18:59Z", "event": "tool_call", "server": "tickets", "tool": "create_ticket", "caller": "mcp-gateway@claude-code-507112.iam.gserviceaccount.com", "arg_names": ["description", "pri
-{"ts": "2026-10-10T19:19:37Z", "event": "tool_call", "server": "tickets", "tool": "create_ticket", "caller": "mcp-gateway@claude-code-507112.iam.gserviceaccount.com", "arg_names": ["description", "pri
-{"ts": "2026-10-10T19:18:54Z", "event": "tool_call", "server": "finops", "tool": "cost_by_service", "caller": "mcp-gateway@claude-code-507112.iam.gserviceaccount.com", "arg_names": ["days"], "outcome"
-{"ts": "2026-10-10T19:19:32Z", "event": "tool_call", "server": "finops", "tool": "cost_by_service", "caller": "mcp-gateway@claude-code-507112.iam.gserviceaccount.com", "arg_names": ["days"], "outcome"
+{"ts": "2026-10-10T19:57:03Z", "event": "tool_call", "server": "tickets", "tool": "update_ticket_status", "caller": "mcp-gateway@claude-code-507112.iam.gserviceaccount.com", "arg_names": ["status", "t
+{"ts": "2026-10-10T19:57:03Z", "event": "tool_call", "server": "tickets", "tool": "update_ticket_status", "caller": "mcp-gateway@claude-code-507112.iam.gserviceaccount.com", "arg_names": ["status", "t
+{"ts": "2026-10-10T19:59:41Z", "event": "tool_call", "server": "tickets", "tool": "create_ticket", "caller": "mcp-gateway@claude-code-507112.iam.gserviceaccount.com", "arg_names": ["description", "pri
+{"ts": "2026-10-10T19:56:53Z", "event": "tool_call", "server": "finops", "tool": "cost_by_service", "caller": "mcp-gateway@claude-code-507112.iam.gserviceaccount.com", "arg_names": ["days"], "outcome"
+{"ts": "2026-10-10T19:59:36Z", "event": "tool_call", "server": "finops", "tool": "cost_by_service", "caller": "mcp-gateway@claude-code-507112.iam.gserviceaccount.com", "arg_names": ["days"], "outcome"

@@ -31,10 +31,13 @@ def _ns(namespace: str) -> str:
 
 @mcp.tool()
 @audited("k8s")
-def list_pods(namespace: str = "mcp-platform") -> list[dict]:
-    """List pods in a namespace with phase, readiness and restart counts."""
+def list_pods(namespace: str = "mcp-platform", include_completed: bool = False) -> list[dict]:
+    """List pods in a namespace with phase, readiness and restart counts. Pods of finished Jobs (phase Succeeded) are
+    hidden unless include_completed is true: they are not unhealthy, just done."""
     out = []
     for p in core().list_namespaced_pod(_ns(namespace)).items:
+        if p.status.phase == "Succeeded" and not include_completed:
+            continue
         cs = p.status.container_statuses or []
         out.append({"name": p.metadata.name, "phase": p.status.phase,
                     "ready": f"{sum(1 for c in cs if c.ready)}/{len(cs)}",

@@ -1,4 +1,5 @@
 $ gcloud projects get-iam-policy claude-code-507112   (PROJECT-level roles of the platform's service accounts)
+serviceAccount:mcp-agent    aiplatform.user
 serviceAccount:mcp-build    logging.logWriter
 serviceAccount:mcp-finops   bigquery.jobUser
 serviceAccount:mcp-tickets  datastore.user     only-the-tickets-database

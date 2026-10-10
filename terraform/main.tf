@@ -8,6 +8,7 @@ resource "google_project_service" "apis" {
     "bigquery.googleapis.com",
     "firestore.googleapis.com",
     "cloudbuild.googleapis.com",
+    "aiplatform.googleapis.com",
   ])
   project            = var.project_id
   service            = each.value
