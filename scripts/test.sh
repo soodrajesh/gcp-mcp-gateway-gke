@@ -7,4 +7,6 @@ start_port_forwards; trap 'kill $PF_PIDS 2>/dev/null; wait $PF_PIDS 2>/dev/null 
 rc=0
 "$PY" "$ROOT/tests/test_flow.py" || rc=1
 "$PY" "$ROOT/tests/test_isolation.py" || rc=1
+"$PY" "$ROOT/tests/test_agent.py" || rc=1
+"$PY" "$ROOT/tests/test_resilience.py" || rc=1   # last: it restarts Keycloak and the gateway pod
 exit $rc

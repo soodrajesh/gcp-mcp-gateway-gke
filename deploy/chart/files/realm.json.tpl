@@ -4,6 +4,15 @@
   "sslRequired": "none",
   "accessTokenLifespan": 300,
   "roles": {"realm": [{"name": "mcp-viewer"}, {"name": "mcp-operator"}]},
+  "components": {"org.keycloak.keys.KeyProvider": [
+    {"name": "hmac-generated-hs512", "providerId": "hmac-generated", "subComponents": {}, "config": {"priority": ["100"], "algorithm": ["HS512"]}},
+    {"name": "aes-generated", "providerId": "aes-generated", "subComponents": {}, "config": {"priority": ["100"]}},
+    {
+    "name": "mcp-fixed-signing-key", "providerId": "rsa", "subComponents": {},
+    "config": {"priority": ["1000"], "enabled": ["true"], "active": ["true"], "algorithm": ["RS256"],
+               "privateKey": [{{ required "keycloak.signingKey.privateKey is required" .Values.keycloak.signingKey.privateKey | toJson }}],
+               "certificate": [{{ required "keycloak.signingKey.certificate is required" .Values.keycloak.signingKey.certificate | toJson }}]}
+  }]},
   "clientScopes": [{
     "name": "mcp-gateway", "protocol": "openid-connect",
     "attributes": {"include.in.token.scope": "true", "display.on.consent.screen": "false"},

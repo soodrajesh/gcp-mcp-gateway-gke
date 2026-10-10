@@ -1,0 +1,46 @@
+{{- /* The agent runs as short-lived Jobs created by scripts/ask.sh. This file provides what those Jobs use. */ -}}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: mcp-agent
+  namespace: {{ .Release.Namespace }}
+  annotations:
+    iam.gke.io/gcp-service-account: {{ required "agent.gsa is required" .Values.agent.gsa | quote }}   # Workload Identity: may call Gemini, nothing else
+automountServiceAccountToken: false
+---
+# The agent's OAuth client credentials. Two identities exist so the SAME agent code can be run with different power:
+# `viewer` (read tools only) and `operator` (read + write). What the agent can do is decided by the token, not the code.
+apiVersion: v1
+kind: Secret
+metadata: {name: agent-credentials, namespace: {{ .Release.Namespace }}}
+stringData:
+  viewer: {{ required "agent-viewer secret" (index .Values.keycloak.clients "agent-viewer").secret | quote }}
+  operator: {{ required "agent-operator secret" (index .Values.keycloak.clients "agent-operator").secret | quote }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata: {name: agent-config, namespace: {{ .Release.Namespace }}}
+data:
+  GATEWAY_URL: {{ .Values.clusterResource | quote }}
+  TOKEN_URL: "http://keycloak.{{ .Release.Namespace }}.svc.cluster.local:8080/realms/{{ .Values.realm }}/protocol/openid-connect/token"
+  PROJECT_ID: {{ .Values.project | quote }}
+  LOCATION: {{ .Values.agent.location | quote }}
+  MODEL: {{ .Values.agent.model | quote }}
+---
+# The agent may only talk to: DNS, the gateway, Keycloak (to get its token), the metadata server and HTTPS (Vertex AI).
+# It has no route to the MCP servers: even a compromised agent can only do what its token allows at the gateway.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: agent-egress, namespace: {{ .Release.Namespace }}}
+spec:
+  podSelector: {matchLabels: {app: mcp-agent}}
+  policyTypes: [Egress]
+  egress:
+  - ports: [{protocol: UDP, port: 53}, {protocol: TCP, port: 53}]
+  - to: [{ipBlock: {cidr: 169.254.169.252/32}}, {ipBlock: {cidr: 169.254.169.254/32}}]
+    ports: [{protocol: TCP, port: 988}, {protocol: TCP, port: 80}]
+  - to: [{podSelector: {matchLabels: {gateway.networking.k8s.io/gateway-name: mcp-gateway}}}]
+    ports: [{protocol: TCP, port: 80}]
+  - to: [{podSelector: {matchLabels: {app: keycloak}}}]
+    ports: [{protocol: TCP, port: 8080}]
+  - ports: [{protocol: TCP, port: 443}]

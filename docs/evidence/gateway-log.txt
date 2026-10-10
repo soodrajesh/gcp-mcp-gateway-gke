@@ -1,15 +1,15 @@
 $ kubectl -n mcp-platform logs deploy/mcp-gateway      (one line per request; caller = JWT sub)
-19:19:33.815  status=200  caller=c8f28b2c-72b 
-19:19:34.008  status=200  caller=c8f28b2c-72b 
-19:19:34.106  status=200  caller=c8f28b2c-72b 
-19:19:35.036  status=200  caller=c8f28b2c-72b 
-19:19:35.131  status=200  caller=c8f28b2c-72b 
-19:19:36.123  status=200  caller=c8f28b2c-72b 
-19:19:36.209  status=400  caller=c8f28b2c-72b error: mcp: Unknown tool: tickets_create_ticket
-19:19:37.268  status=200  caller=5413ade3-ff9 
-19:19:37.438  status=200  caller=5413ade3-ff9 
-19:19:37.613  status=200  caller=5413ade3-ff9 
-19:19:38.651  status=401  caller=-            error: mcp authentication failure: authentication failure: the token is
-19:19:38.687  status=401  caller=-            error: mcp authentication failure: authentication failure: the token is
-19:19:39.525  status=403  caller=6c0d5318-868 error: authorization failed
-19:19:39.608  status=403  caller=6c0d5318-868 error: authorization failed
+19:59:37.503  status=200  caller=7ddea6a2-793 
+19:59:37.642  status=200  caller=7ddea6a2-793 
+19:59:37.742  status=200  caller=7ddea6a2-793 
+19:59:38.747  status=200  caller=7ddea6a2-793 
+19:59:38.920  status=200  caller=7ddea6a2-793 
+19:59:39.777  status=200  caller=7ddea6a2-793 
+19:59:39.952  status=400  caller=7ddea6a2-793 error: mcp: Unknown tool: tickets_create_ticket
+19:59:40.878  status=200  caller=3e427579-e5d 
+19:59:41.119  status=200  caller=3e427579-e5d 
+19:59:41.219  status=200  caller=3e427579-e5d 
+19:59:42.174  status=401  caller=-            error: mcp authentication failure: authentication failure: the token is
+19:59:42.203  status=401  caller=-            error: mcp authentication failure: authentication failure: the token is
+19:59:43.332  status=403  caller=fe1df809-277 error: authorization failed
+19:59:43.652  status=403  caller=fe1df809-277 error: authorization failed

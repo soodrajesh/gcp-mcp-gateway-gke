@@ -28,7 +28,7 @@ def probe(name, labels, url, ns=NS, timeout=4):
 def main() -> int:
     print("\nF. Each server refuses anyone but the gateway (checked directly, bypassing the gateway)")
     ports = {"tickets": 18091, "finops": 18092, "k8s": 18093}
-    pfs = [subprocess.Popen(f"kubectl -n {NS} port-forward svc/mcp-{n} {p}:8000", shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL) for n, p in ports.items()]
+    pfs = [subprocess.Popen(f"exec kubectl -n {NS} port-forward svc/mcp-{n} {p}:8000", shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL) for n, p in ports.items()]
     time.sleep(6)
     try:
         def post(port, auth=None):
@@ -44,9 +44,9 @@ def main() -> int:
         check("tickets: a GENUINE Google-signed token for a different audience -> 401",
               gtok.count(".") == 2 and post(ports["tickets"], gtok) == "401", f"status={post(ports['tickets'], gtok) if gtok else 'no token'}")
     finally:
-        for p in pfs:
+        for p in pfs:          # only OUR forwards: `exec` makes the Popen handle the kubectl process itself
             p.terminate()
-        sh("pkill -f 'port-forward svc/mcp-' || true")
+            p.wait(timeout=10)
 
     print("\nG. Network lockdown (NetworkPolicy): only the gateway reaches the servers")
     tests = {
@@ -61,6 +61,10 @@ def main() -> int:
 
     def run(k, v):
         got[k] = probe(v[0], v[1], v[2], v[3])
+        # A positive control may need a moment after a pod restart; a "blocked" result is never retried.
+        for _ in range(2):
+            if k == "client->gateway" and got[k] != "200":
+                got[k] = probe(v[0] + "r", v[1], v[2], v[3], timeout=8)
 
     threads = [threading.Thread(target=run, args=(k, v)) for k, v in tests.items()]
     [t.start() for t in threads]; [t.join() for t in threads]

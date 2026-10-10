@@ -18,7 +18,11 @@ spec:
   replicas: 1
   selector: {matchLabels: {app: keycloak}}
   template:
-    metadata: {labels: {app: keycloak}}
+    metadata:
+      labels: {app: keycloak}
+      annotations:
+        # Keycloak reads its realm only at start-up: a changed realm must roll the pod.
+        checksum/realm: {{ tpl (.Files.Get "files/realm.json.tpl") . | sha256sum }}
     spec:
       containers:
       - name: keycloak

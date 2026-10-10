@@ -17,12 +17,13 @@ def secret(client: str) -> str:
     return (ROOT / ".secrets" / client).read_text().strip()
 
 
-def get_token(client: str, client_secret: str | None = None):
+def get_token(client: str, client_secret: str | None = None, base: str | None = None):
     """OAuth2 client-credentials grant against Keycloak. Returns (http_status, json_body)."""
     body = urllib.parse.urlencode({"grant_type": "client_credentials", "client_id": client,
                                    "client_secret": client_secret or secret(client)}).encode()
     try:
-        with urllib.request.urlopen(urllib.request.Request(TOKEN_URL, data=body), timeout=20) as r:
+        url = f"{base}/realms/{REALM}/protocol/openid-connect/token" if base else TOKEN_URL
+        with urllib.request.urlopen(urllib.request.Request(url, data=body), timeout=20) as r:
             return r.status, json.load(r)
     except urllib.error.HTTPError as e:
         return e.code, json.loads(e.read() or b"{}")
@@ -45,7 +46,7 @@ def leaf(e: BaseException) -> BaseException:
     return leaf(e.exceptions[0]) if hasattr(e, "exceptions") else e
 
 
-async def session(token: str | None, fn):
+async def session(token: str | None, fn, url: str | None = None):
     """Run fn(client) with a bearer token. Returns (result_or_exception, [(status, www-authenticate), ...])."""
     seen: list[tuple[int, str | None]] = []
 
@@ -56,7 +57,7 @@ async def session(token: str | None, fn):
     http.event_hooks["response"].append(hook)
     try:
         async with http:
-            async with Client(streamable_http_client(MCP_URL, http_client=http)) as c:
+            async with Client(streamable_http_client(url or MCP_URL, http_client=http)) as c:
                 return await fn(c), seen
     except BaseException as e:  # noqa: BLE001 - callers assert on the status, whatever the SDK raises
         return e, seen

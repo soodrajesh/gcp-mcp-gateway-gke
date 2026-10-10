@@ -24,23 +24,23 @@ $ tests/cli.py call agent-viewer finops_cost_by_service days=30      (one line p
   Cloud Storage         481.67 USD
   Cloud Logging         196.72 USD
 $ tests/cli.py call agent-viewer k8s_list_pods namespace=mcp-platform      (one line per pod)
-  keycloak-6bd8bd7f67-j2gvj          Running  ready=1/1
-  mcp-finops-5574b76995-w78mg        Running  ready=1/1
-  mcp-gateway-6d7bb95575-t2lp4       Running  ready=1/1
-  mcp-k8s-7cb69b556f-hckrr           Running  ready=1/1
-  mcp-tickets-54f4c79c5f-rhxwx       Running  ready=1/1
+  keycloak-58dcf9fb7c-ftp9t          Running  ready=1/1
+  mcp-finops-7bc85b5464-9j7nv        Running  ready=1/1
+  mcp-gateway-6d7bb95575-qlfl4       Running  ready=1/1
+  mcp-k8s-586c559d4d-6pd9c           Running  ready=1/1
+  mcp-tickets-5d8cf95c88-4jqsn       Running  ready=1/1
 $ tests/cli.py call agent-viewer k8s_list_pods namespace=kube-system
 REFUSED as agent-viewer: Error executing tool list_pods
 $ tests/cli.py call agent-viewer tickets_create_ticket title=nope
 REFUSED as agent-viewer: Unknown tool: tickets_create_ticket
 $ tests/cli.py call agent-operator tickets_create_ticket title="Rotate Keycloak admin password" priority=medium
 {
-  "id": "67d6a790-a520-4b7e-b6ab-108f3c3eb818",
-  "description": "",
-  "priority": "medium",
+  "id": "f1c24801-8f84-437f-8b59-4fae44f8974e",
+  "status": "open",
   "title": "Rotate Keycloak admin password",
-  "created_at": "2026-10-10T19:19:37.356668+00:00",
-  "status": "open"
+  "priority": "medium",
+  "created_at": "2026-10-10T19:59:41.042558+00:00",
+  "description": ""
 }
 $ tests/cli.py list agent-noaud
 REFUSED as agent-noaud: HTTP 401 (Server returned an error response)

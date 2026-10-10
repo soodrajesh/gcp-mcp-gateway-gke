@@ -14,7 +14,10 @@
 
 ## Test
 ```bash
-./scripts/test.sh        # 49 checks: flow (30) + isolation (19). Every denial has a positive control.
+./scripts/test.sh        # 70 checks (~10 min): flow 30 + isolation 19 + agent 12 + resilience 9. Every denial has a positive control.
+                         # The last suite kills the Keycloak and gateway pods on purpose.
+./scripts/ask.sh viewer "How many pods are running, and which cloud service costs the most?"   # the AI agent, as a Job
+./scripts/ask.sh operator "Open a ticket titled 'Investigate Keycloak restarts' with high priority"
 ./scripts/capture-evidence.sh   # re-capture docs/evidence/*.txt from the live cluster (then render PNGs with docs/diagrams/termshot.py)
 ```
 
@@ -62,7 +65,10 @@ kubectl -n agentgateway-system logs deploy/agentgateway | grep jwks        # the
 | `kubectl` times out after your IP changed | The API allows only the IP used at `up.sh` time. Re-run `./scripts/up.sh`. |
 | Server pods not Ready for ~1 min | They `pip install` the MCP SDK at start. Normal. |
 | `curl` JSON-RPC to `/mcp` returns 400 with an empty body | MCP 2026-07-28 request shape differs from the old one. Use `tests/cli.py` / the SDK client. |
-| Valid tokens suddenly get 401 (`token uses the unknown key` in the gateway log) | Keycloak restarted, so its signing keys changed (dev mode, in-memory DB). The controller caches the old key set for 5 min. Force a refetch: `kubectl -n mcp-platform delete agentgatewaypolicy mcp-authn && ./scripts/up.sh`. |
+| Valid tokens suddenly get 401 (`token uses the unknown key` in the gateway log) | The IdP's signing key changed. Normally it cannot: the key is pinned in `.secrets/realm-key.pem`. It happens if you deleted `.secrets/` (a new key was generated) or changed the key without waiting out the gateway's 5-minute key cache. Force a refetch: `kubectl -n mcp-platform delete agentgatewaypolicy mcp-authn && ./scripts/up.sh`. |
+| Changed the realm in the chart but nothing changed | Keycloak reads its realm only at start-up. The chart rolls the pod on a realm change (checksum annotation); if you changed a Secret by hand, `kubectl -n mcp-platform rollout restart deploy/keycloak`. |
+| `ask.sh` prints "agent produced no events" | The Job failed before the agent started: `kubectl -n mcp-platform describe job <name>` (image pull, Workload Identity, or the agent-credentials Secret). |
+| Agent says "refused by the gateway" | Working as designed for a viewer asking for a write. `tests/cli.py list agent-viewer` shows what it may use. |
 | Server pods `ImagePullBackOff` | Nodes pull as the default compute service account; it needs `artifactregistry.reader` on the repo (Terraform `nodes_pull`). |
 | `up.sh` fails creating Firestore | A deleted database name cannot be reused right away; `up.sh` uses a fresh `.deploy-suffix` per deployment (kept until `down.sh`). |
 | Gateway returns 500 `idToken auth requires a hostname target or explicit audience` | Selector-based MCP targets have no hostname; the chart uses static host targets with an explicit per-target audience. |
