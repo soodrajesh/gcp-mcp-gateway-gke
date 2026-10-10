@@ -39,6 +39,7 @@ gcloud config set project <your-project>     # billing linked
 ./scripts/down.sh    # delete everything and prove nothing billable is left
 ```
 
+**New to MCP gateways? Start with [docs/how-mcp-works.md](docs/how-mcp-works.md)** (components, request flow, OAuth/JWT, one vs many gateways, best practices).
 Poke it by hand: [docs/runbook.md](docs/runbook.md). Design notes: [docs/architecture.md](docs/architecture.md).
 Raw findings from the first spike: [spike/FINDINGS.md](spike/FINDINGS.md).
 
