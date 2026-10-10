@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
-# Delete everything the spike created. Shows the destroy plan, applies that plan, then proves nothing is left.
+# Delete everything. Shows the destroy plan, applies that plan, then proves nothing billable is left.
 source "$(dirname "$0")/lib.sh"
 need gcloud; need terraform; need kubectl
 if gcloud container clusters describe "$CLUSTER" --region "$REGION" --project "$PROJECT_ID" >/dev/null 2>&1; then
   cluster_credentials
   log "Delete workloads first (releases the load balancer)"
-  kubectl delete ns spike agentgateway-system --wait=true --timeout=300s 2>&1 | tail -2 || true
+  helm uninstall mcp-platform -n "$NS" >/dev/null 2>&1 || true
+  kubectl delete ns "$NS" agentgateway-system --wait=true --timeout=300s 2>&1 | tail -2 || true
 fi
 $TF init -input=false -backend-config="bucket=$STATE_BUCKET" >/dev/null
 set_authorized_cidr
@@ -17,4 +18,4 @@ c="$(gcloud container clusters list --project "$PROJECT_ID" --format='value(name
 f="$(gcloud compute forwarding-rules list --project "$PROJECT_ID" --format='value(name)' | grep -c . || true)"
 a="$(gcloud compute addresses list --project "$PROJECT_ID" --format='value(name)' | grep -c . || true)"
 echo "clusters=$c forwarding-rules=$f reserved-addresses=$a"
-[ "$c$f$a" = "000" ] && ok "clean" || warn "something is still there: check the counts above"
+if [ "$c$f$a" = "000" ]; then ok "clean"; else warn "something is still there: check the counts above"; fi

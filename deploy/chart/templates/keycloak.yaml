@@ -1,0 +1,50 @@
+apiVersion: v1
+kind: Secret
+metadata: {name: keycloak-admin, namespace: {{ .Release.Namespace }}}
+stringData:
+  password: {{ required "keycloak.adminPassword is required" .Values.keycloak.adminPassword | quote }}
+---
+apiVersion: v1
+kind: Secret
+metadata: {name: keycloak-realm, namespace: {{ .Release.Namespace }}}
+stringData:
+  realm.json: |
+{{ tpl (.Files.Get "files/realm.json.tpl") . | indent 4 }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: keycloak, namespace: {{ .Release.Namespace }}, labels: {app: keycloak}}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: keycloak}}
+  template:
+    metadata: {labels: {app: keycloak}}
+    spec:
+      containers:
+      - name: keycloak
+        image: {{ .Values.keycloak.image }}
+        args: ["start-dev", "--import-realm"]
+        env:
+        - {name: KC_BOOTSTRAP_ADMIN_USERNAME, value: admin}
+        - name: KC_BOOTSTRAP_ADMIN_PASSWORD
+          valueFrom: {secretKeyRef: {name: keycloak-admin, key: password}}
+        # One fixed issuer no matter how Keycloak is reached (port-forward, in-cluster service): `iss` must be stable.
+        - {name: KC_HOSTNAME, value: {{ regexReplaceAll "/realms/.*" .Values.issuer "" | quote }}}
+        - {name: KC_HOSTNAME_BACKCHANNEL_DYNAMIC, value: "true"}
+        - {name: KC_HTTP_ENABLED, value: "true"}
+        ports: [{name: http, containerPort: 8080}]
+        resources: {requests: {cpu: 500m, memory: 1Gi}}
+        readinessProbe:
+          httpGet: {path: /realms/{{ .Values.realm }}, port: 8080}
+          initialDelaySeconds: 20
+          periodSeconds: 5
+          failureThreshold: 60
+        volumeMounts: [{name: realm, mountPath: /opt/keycloak/data/import, readOnly: true}]
+      volumes: [{name: realm, secret: {secretName: keycloak-realm}}]
+---
+apiVersion: v1
+kind: Service
+metadata: {name: keycloak, namespace: {{ .Release.Namespace }}, labels: {app: keycloak}}
+spec:
+  selector: {app: keycloak}
+  ports: [{name: http, port: 8080, targetPort: 8080}]

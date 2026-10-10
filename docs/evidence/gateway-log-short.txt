@@ -1,11 +1,13 @@
-$ kubectl -n agentgateway-system logs deploy/agentgateway-proxy   (one line per request)
-18:09:27.686  status=200  caller=viewer    
-18:09:28.430  status=200  caller=viewer    
-18:09:28.505  status=400  caller=viewer    
-18:09:29.223  status=200  caller=operator  
-18:09:29.304  status=200  caller=operator  
-18:09:29.389  status=200  caller=operator  
-18:09:30.222  status=401  caller=-         error: authe
-
-18:09:30.302  status=401  caller=-         error: authe
-
+$ kubectl -n mcp-platform logs deploy/mcp-gateway     (one line per request)
+18:37:27.887  status=200  caller=77ae2038-333 
+18:37:28.068  status=200  caller=77ae2038-333 
+18:37:28.313  status=200  caller=77ae2038-333 
+18:37:29.228  status=200  caller=77ae2038-333 
+18:37:29.313  status=400  caller=77ae2038-333 error: mcp: Unknown tool: mcp-alpha-8000_write_thing
+18:37:30.250  status=200  caller=58acb273-429 
+18:37:30.411  status=200  caller=58acb273-429 
+18:37:30.500  status=200  caller=58acb273-429 
+18:37:31.715  status=401  caller=-            error: mcp authentication failure: authentication failure: the token is inval
+18:37:31.747  status=401  caller=-            error: mcp authentication failure: authentication failure: the token is inval
+18:37:32.586  status=403  caller=ccfd4cad-93c error: authorization failed
+18:37:32.741  status=403  caller=ccfd4cad-93c error: authorization failed

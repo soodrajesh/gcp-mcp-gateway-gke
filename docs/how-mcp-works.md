@@ -1,7 +1,7 @@
 # How MCP, gateways, OAuth and JWT fit together
 
 Written for someone who wants the whole picture before the code. Items marked **[demo]** you can run today in
-this repo (`./scripts/up.sh`, then `spike/cli.py`); items marked **[planned]** are the next build.
+this repo (`./scripts/up.sh`, then `tests/cli.py`); items marked **[planned]** are the next build.
 
 ## 1. The pieces
 
@@ -16,13 +16,13 @@ this repo (`./scripts/up.sh`, then `spike/cli.py`); items marked **[planned]** a
 | Piece | What it is | Example here |
 |---|---|---|
 | **LLM** | Decides *which* tool to call and with what arguments. Never calls anything itself. | Gemini (planned) |
-| **Host / agent** | The app that runs the LLM and executes its tool requests. | the planned ADK agent; today `spike/cli.py` |
+| **Host / agent** | The app that runs the LLM and executes its tool requests. | the planned ADK agent; today `tests/cli.py` |
 | **MCP client** | The connection library inside the host. Speaks MCP to one endpoint. | Python SDK `Client` |
 | **MCP server** | A small service that exposes **tools** (and optionally resources and prompts) over MCP. | `mcp-alpha`, `mcp-beta` **[demo]** |
 | **Tool** | A named function with a description and an input schema: `read_thing(key)`. The server runs it. | `read_thing`, `write_thing` **[demo]** |
 | **MCP gateway** | A proxy in front of the servers. One URL for the agent; it authenticates, authorizes, routes, rate-limits and audits. | agentgateway **[demo]** |
-| **IdP / authorization server** | Authenticates callers and **issues tokens**. Separate from the gateway and from the servers. | Keycloak **[planned]**; a throwaway key today |
-| **JWT** | The token format: a signed JSON document. Anyone holding the IdP's public key can verify it offline. | `.spike/*.jwt` **[demo]** |
+| **IdP / authorization server** | Authenticates callers and **issues tokens**. Separate from the gateway and from the servers. | Keycloak **[demo]** |
+| **JWT** | The token format: a signed JSON document. Anyone holding the IdP's public key can verify it offline. | `tests/cli.py token agent-viewer` **[demo]** |
 
 MCP itself is JSON-RPC 2.0 over a transport: `stdio` for local processes, **streamable HTTP** for remote servers.
 The two calls that matter: `tools/list` ("what can I do?") and `tools/call` ("do this"). The 2026-07-28 revision made
@@ -60,10 +60,10 @@ The agent starts with **no token**. MCP's authorization spec (OAuth 2.1) defines
  6  IdP     → Agent   : access token (a JWT)
  7  Agent   → Gateway : request + Authorization: Bearer <JWT>                 → flow in section 2
 ```
-This is the second diagram you sent. Today **[demo]** the gateway only does step 7 and returns a bare 401 at
-step 1/2; steps 2–6 need the gateway's MCP-auth block plus Keycloak **[planned]**.
+This is the second diagram you sent. All seven steps run today **[demo]** and are asserted by `./scripts/test.sh` (section A = steps 1-4, B = 5-6, C/D = 7). The client here
+uses the client-credentials grant (a service agent); the human authorization-code + PKCE variant and dynamic client registration are not exercised.
 
-**What is inside the JWT** (decode any file in `.spike/` at jwt.io, they are fake and expire):
+**What is inside the JWT** (run `tests/cli.py token agent-viewer`; tokens last 5 minutes):
 
 | Claim | Meaning | Checked by |
 |---|---|---|
@@ -109,8 +109,8 @@ global gateway spanning prod and dev; a gateway that passes the caller's token s
 
 | Practice | Why | Status |
 |---|---|---|
-| Servers are OAuth *resource servers*; a separate IdP issues tokens | Spec requirement; keeps secrets and login out of every server | IdP **[planned]** |
-| Validate `aud`, `iss`, `exp`, signature on **every** request | Stops token reuse across services | **[demo]** |
+| Servers are OAuth *resource servers*; a separate IdP issues tokens | Spec requirement; keeps secrets and login out of every server | **[demo]** (the gateway is the resource server today) |
+| Validate `aud`, `iss`, `exp`, signature on **every** request | Stops token reuse across services | **[demo]**: wrong audience, tampered and untrusted-key tokens all 401 |
 | **No token passthrough**: gateway exchanges for a token scoped to the server | Spec forbids it; prevents the confused-deputy problem | **[planned]** |
 | Least privilege per tool, default deny, hide what the caller cannot use | An agent can only misuse what it can see | **[demo]** |
 | Short-lived tokens, narrow scopes, step-up for sensitive tools | Limits damage from a leaked token | **[planned]** |
@@ -127,10 +127,13 @@ global gateway spanning prod and dev; a gateway that passes the caller's token s
 
 ```bash
 ./scripts/pf.sh                                   # terminal 1
-.venv/bin/python spike/cli.py list viewer         # authenticated as viewer: 2 read tools
-.venv/bin/python spike/cli.py list operator       # authenticated as operator: 4 tools (same gateway, different view)
-.venv/bin/python spike/cli.py list expired        # HTTP 401: authentication failed
-.venv/bin/python spike/cli.py call viewer mcp-alpha-8000_write_thing key=a value=b   # authorization failed
-kubectl -n agentgateway-system logs deploy/agentgateway-proxy --tail=5   # the audit trail: caller + status
+./scripts/pf.sh &                                   # gateway :18080, Keycloak :18081
+.venv/bin/python tests/cli.py token agent-viewer    # a real Keycloak JWT: look at iss, aud, roles
+.venv/bin/python tests/cli.py list agent-viewer     # authenticated as viewer: 2 read tools
+.venv/bin/python tests/cli.py list agent-operator   # operator: 4 tools (same gateway, different view)
+.venv/bin/python tests/cli.py list agent-noaud      # HTTP 401: valid Keycloak token, not addressed to this gateway
+.venv/bin/python tests/cli.py list agent-norole     # HTTP 403: authenticated, but no role
+.venv/bin/python tests/cli.py call agent-viewer mcp-alpha-8000_write_thing key=a value=b   # authorization failed
+kubectl -n mcp-platform logs deploy/mcp-gateway --tail=5   # the audit trail: caller + status
 ```
 Two roles, one URL, different tool lists: that is authentication and authorization at a gateway in one picture.

@@ -1,0 +1,23 @@
+# Canonical URLs. The gateway is reached from a laptop through `kubectl port-forward` (localhost URL); the in-cluster
+# URL is also accepted as an audience, for the agent that runs in the cluster. The issuer is Keycloak's in-cluster
+# address: the gateway must be able to fetch the IdP's metadata from it. Keycloak pins `iss` to this value, so a
+# token fetched through a port-forward still carries the same issuer.
+resource: http://localhost:18080/mcp
+clusterResource: http://mcp-gateway.mcp-platform.svc.cluster.local/mcp
+issuer: http://keycloak.mcp-platform.svc.cluster.local:8080/realms/mcp
+realm: mcp
+
+keycloak:
+  image: quay.io/keycloak/keycloak:26.7.1
+  adminPassword: ""        # set by scripts/up.sh (random, kept in .secrets/)
+  clients:                 # confidential service clients: name -> secret (set by scripts/up.sh)
+    agent-viewer:   {secret: "", role: mcp-viewer,   audience: true}
+    agent-operator: {secret: "", role: mcp-operator, audience: true}
+    agent-norole:   {secret: "", role: "",           audience: true}   # valid token, no role: must be denied
+    agent-noaud:    {secret: "", role: mcp-operator, audience: false}  # token is not addressed to this gateway (no audience)
+
+serverImage: python:3.13-slim
+
+# scripts/up.sh installs with enabled=false first, waits for Keycloak, then enables: the gateway fetches the
+# IdP's signing keys when the policy appears, so Keycloak must already be serving them.
+policies: {enabled: true}
