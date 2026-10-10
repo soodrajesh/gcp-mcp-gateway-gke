@@ -14,3 +14,6 @@ deploy.env
 *.pem
 *.key
 *.tfplan
+.venv/
+.spike/
+__pycache__/

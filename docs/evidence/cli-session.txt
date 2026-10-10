@@ -1,0 +1,16 @@
+$ spike/cli.py list viewer
+mcp-alpha-8000_read_thing
+mcp-beta-8000_read_thing
+$ spike/cli.py list operator
+mcp-alpha-8000_read_thing
+mcp-alpha-8000_write_thing
+mcp-beta-8000_read_thing
+mcp-beta-8000_write_thing
+$ spike/cli.py call viewer mcp-alpha-8000_read_thing key=hello
+alpha: read hello
+$ spike/cli.py call viewer mcp-alpha-8000_write_thing key=a value=b
+REFUSED as viewer: Unknown tool: mcp-alpha-8000_write_thing
+$ spike/cli.py call operator mcp-alpha-8000_write_thing key=a value=b
+alpha: wrote a=b
+$ spike/cli.py list expired
+REFUSED as expired: HTTP 401 (token rejected)

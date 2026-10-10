@@ -1,0 +1,22 @@
+[1;32m✔ gateway reachable on localhost:18080[0m
+
+1. Authentication (every request must carry a valid token)
+  PASS  no token -> rejected with HTTP 401  -> statuses=[401, 401]
+  PASS  garbage token -> rejected with HTTP 401  -> statuses=[401, 401]
+  PASS  expired token -> rejected with HTTP 401  -> statuses=[401, 401]
+  PASS  wrong audience -> rejected with HTTP 401  -> statuses=[401, 401]
+  PASS  signed by an untrusted key -> rejected with HTTP 401  -> statuses=[401, 401]
+
+2. Viewer role (read tools only)
+  PASS  viewer can list tools
+  PASS  viewer sees both servers' read tools  -> ['mcp-alpha-8000_read_thing', 'mcp-beta-8000_read_thing']
+  PASS  viewer sees NO write tools
+  PASS  viewer can call alpha read_thing  -> alpha: read k
+  PASS  viewer can call beta read_thing  -> beta: read k
+  PASS  viewer calling write_thing is refused  -> Unknown tool: mcp-alpha-8000_write_thing
+
+3. Operator role (everything)
+  PASS  operator sees all 4 tools (2 servers x read/write)  -> ['mcp-alpha-8000_read_thing', 'mcp-alpha-8000_write_thing', 'mcp-beta-8000_read_thing', 'mcp-beta-8000_write_thing']
+  PASS  operator can call write_thing  -> beta: wrote k=v
+
+13 passed, 0 failed
