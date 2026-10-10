@@ -1,0 +1,91 @@
+apiVersion: v1
+kind: Namespace
+metadata: {name: spike}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata: {name: server-src, namespace: spike}
+data:
+  server.py: |
+    """Spike MCP server: one read tool, one write tool, stateless streamable HTTP."""
+    import os
+    import uvicorn
+    from mcp.server.mcpserver import MCPServer
+    from mcp.server.transport_security import TransportSecuritySettings
+
+    name = os.environ.get("SERVER_NAME", "spike")
+    mcp = MCPServer(name)
+
+
+    @mcp.tool()
+    def read_thing(key: str) -> str:
+        """Read-only tool."""
+        return f"{name}: read {key}"
+
+
+    @mcp.tool()
+    def write_thing(key: str, value: str) -> str:
+        """Write tool, should be denied to viewer roles at the gateway."""
+        return f"{name}: wrote {key}={value}"
+
+
+    app = mcp.streamable_http_app(
+        stateless_http=True, host="0.0.0.0",
+        transport_security=TransportSecuritySettings(enable_dns_rebinding_protection=False),
+    )
+    if __name__ == "__main__":
+        uvicorn.run(app, host="0.0.0.0", port=8000)
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: mcp-alpha, namespace: spike, labels: {app: mcp-alpha}}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: mcp-alpha}}
+  template:
+    metadata: {labels: {app: mcp-alpha}}
+    spec:
+      containers:
+      - name: server
+        image: python:3.13-slim
+        command: ["sh","-c","pip install -q --no-cache-dir mcp==2.3.0 uvicorn && python /src/server.py"]
+        env: [{name: SERVER_NAME, value: alpha}]
+        ports: [{containerPort: 8000}]
+        volumeMounts: [{name: src, mountPath: /src}]
+        resources: {requests: {cpu: 250m, memory: 512Mi}}
+        readinessProbe: {tcpSocket: {port: 8000}, initialDelaySeconds: 10, periodSeconds: 5, failureThreshold: 40}
+      volumes: [{name: src, configMap: {name: server-src}}]
+---
+apiVersion: v1
+kind: Service
+metadata: {name: mcp-alpha, namespace: spike, labels: {app: mcp-alpha}}
+spec:
+  selector: {app: mcp-alpha}
+  ports: [{port: 8000, targetPort: 8000, appProtocol: agentgateway.dev/mcp}]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: mcp-beta, namespace: spike, labels: {app: mcp-beta}}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: mcp-beta}}
+  template:
+    metadata: {labels: {app: mcp-beta}}
+    spec:
+      containers:
+      - name: server
+        image: python:3.13-slim
+        command: ["sh","-c","pip install -q --no-cache-dir mcp==2.3.0 uvicorn && python /src/server.py"]
+        env: [{name: SERVER_NAME, value: beta}]
+        ports: [{containerPort: 8000}]
+        volumeMounts: [{name: src, mountPath: /src}]
+        resources: {requests: {cpu: 250m, memory: 512Mi}}
+        readinessProbe: {tcpSocket: {port: 8000}, initialDelaySeconds: 10, periodSeconds: 5, failureThreshold: 40}
+      volumes: [{name: src, configMap: {name: server-src}}]
+---
+apiVersion: v1
+kind: Service
+metadata: {name: mcp-beta, namespace: spike, labels: {app: mcp-beta}}
+spec:
+  selector: {app: mcp-beta}
+  ports: [{port: 8000, targetPort: 8000, appProtocol: agentgateway.dev/mcp}]
